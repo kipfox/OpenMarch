@@ -1,0 +1,20 @@
+name: Format
+
+on:
+    push:
+        branches: ["win-docker"]
+
+jobs:
+    format:
+        runs-on: windows-latest
+        steps:
+            - uses: actions/checkout@v4
+            - name: build docker image
+              uses: docker/build-push-action@v5
+              with:
+                  context: .
+                  file: apps/desktop/windows/Dockerfile
+                  push: false
+            - name: validate docker image
+              run: |
+                  docker run ß amitie10g/openmarch-desktop-builder:latest
