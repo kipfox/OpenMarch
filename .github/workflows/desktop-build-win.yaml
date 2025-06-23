@@ -1,4 +1,4 @@
-name: Format
+name: Build on Windows
 
 on:
     push:
@@ -10,11 +10,8 @@ jobs:
         steps:
             - uses: actions/checkout@v4
             - name: build docker image
-              uses: docker/build-push-action@v5
-              with:
-                  context: .
-                  file: apps/desktop/windows/Dockerfile
-                  push: false
+              run: |
+                  docker build -t builder:latest -f apps/desktop/windows/Dockerfile .
             - name: validate docker image
               run: |
-                  docker run ß amitie10g/openmarch-desktop-builder:latest
+                  docker run builder:latest
