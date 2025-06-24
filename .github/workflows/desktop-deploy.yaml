@@ -11,7 +11,7 @@ permissions:
     contents: write # Required for creating releases
 
 jobs:
-    build-and-release:
+    build-and-release-ml:
         runs-on: ${{ matrix.os }}
 
         strategy:
