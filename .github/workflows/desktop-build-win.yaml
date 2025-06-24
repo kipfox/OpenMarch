@@ -5,13 +5,22 @@ on:
         branches: ["win-docker"]
 
 jobs:
-    format:
+    build-on-windows:
         runs-on: windows-latest
         steps:
             - uses: actions/checkout@v4
             - name: build docker image
               run: |
                   docker build -t builder:latest -f apps/desktop/windows/Dockerfile .
-            - name: validate docker image
+            - name: create container
               run: |
-                  docker run builder:latest
+                  docker create -v C:\Users\runneradmin\work\openmarch\openmarch:/repo builder:latest
+            - name: install dependencies
+              run: |
+                  docker exec -it builder:latest pnpm i
+            - name: run build
+              run: |
+                  docker exec -it builder:latest pnpm desktop build
+            - name: package app
+              run: |
+                  docker exec -it builder:latest bash -c "cd /repo/apps/desktop && ../../node_modules/.bin/electron-builder -w --publish=never"
