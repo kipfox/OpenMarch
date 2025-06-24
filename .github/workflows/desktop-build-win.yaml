@@ -11,22 +11,26 @@ jobs:
         steps:
             - uses: actions/checkout@v4
 
+            - name: check contents of working directory
+              run: |
+                  Get-ChildItem -Force .
+
             - name: check contents of C for debugging
               run: |
-                  docker run --rm amitie10g/visualstudio2022-workload-vctools:latest powershell -Command "Get-ChildItem -Force C:\OpenMarch"
+                  docker run --rm amitie10g/visualstudio2022-workload-vctools:latest powershell -Command "Get-ChildItem -Force C:\"
             - name: build docker image
               run: |
                   docker build -t builder:latest -f apps/desktop/windows/Dockerfile .
 
             - name: create container
               run: |
-                  docker create -v C:\Users\runneradmin\work\openmarch\openmarch:C:\OpenMarch builder:latest
+                  docker create -v .:C:\Users\ContainerUser\OpenMarch builder:latest
             - name: install dependencies
               run: |
-                  docker exec -w C:\OpenMarch builder:latest "pnpm i"
+                  docker exec -w C:\Users\ContainerUser\OpenMarch builder:latest "pnpm i"
             - name: run build
               run: |
-                  docker exec -w C:\OpenMarch builder:latest "pnpm desktop build"
+                  docker exec -w C:\Users\ContainerUser\OpenMarch builder:latest "pnpm desktop build"
             - name: package app
               run: |
-                  docker exec -w C:\OpenMarch\apps\desktop builder:latest bash -c ".\node_modules\.bin\electron-builder -w --publish=never"
+                  docker exec -w C:\Users\ContainerUser\OpenMarch\apps\desktop builder:latest bash -c ".\node_modules\.bin\electron-builder -w --publish=never"
