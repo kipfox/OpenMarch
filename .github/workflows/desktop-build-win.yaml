@@ -24,7 +24,7 @@ jobs:
 
             - name: create container
               run: |
-                  docker create -n builder -v .:C:\Users\ContainerUser\OpenMarch -e GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }} builder:latest
+                  docker create --name builder -v .:C:\Users\ContainerUser\OpenMarch -e GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }} builder:latest
             - name: install dependencies
               run: |
                   docker exec -w C:\Users\ContainerUser\OpenMarch builder:latest powershell -Command "pnpm i"
