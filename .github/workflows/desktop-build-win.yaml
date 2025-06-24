@@ -22,9 +22,10 @@ jobs:
               run: |
                   docker build -t builder:latest -f apps/desktop/windows/Dockerfile .
 
-            - name: create container
+            - name: create and start container
               run: |
                   docker create --name builder -v .:C:\Users\ContainerUser\OpenMarch -e GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }} builder:latest
+                  docker start builder
             - name: install dependencies
               run: |
                   docker exec -w C:\Users\ContainerUser\OpenMarch builder powershell -Command "pnpm i"
@@ -33,4 +34,4 @@ jobs:
                   docker exec -w C:\Users\ContainerUser\OpenMarch builder powershell -Command "pnpm desktop build"
             - name: package app
               run: |
-                  docker exec -w C:\Users\ContainerUser\OpenMarch\apps\desktop builder powershell -Command "pnpm exec .\node_modules\.bin\electron-builder -w --publish=always"
+                  docker exec -w C:\Users\ContainerUser\OpenMarch\apps\desktop builder powershell -Command "pnpm exec .\node_modules\.bin\electron-builder -w --publish=never"
