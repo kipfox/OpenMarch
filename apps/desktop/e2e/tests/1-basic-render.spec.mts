@@ -13,7 +13,6 @@ test("Launch page is visible", async ({ electronAppEmpty }) => {
     await expect(page.getByRole("heading")).toContainText(
         "Welcome to OpenMarch",
     );
-    expect(true).toBe(false);
 });
 
 test("Launch page sub-menus", async ({ electronAppEmpty }) => {
