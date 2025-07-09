@@ -1,4 +1,4 @@
-import { test as base, _electron as electron } from "@playwright/test";
+import { test as base, _electron as electron, expect } from "@playwright/test";
 import type { ElectronApplication, Page } from "playwright";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -40,6 +40,28 @@ type MyFixtures = {
     electronAppEmpty: { app: ElectronApplication; page: Page };
 };
 
+const PLAYWRIGHT_ENV = {
+    ...process.env,
+    NODE_ENV: "development",
+    ELECTRON_ENABLE_LOGGING: "1",
+    ELECTRON_ENABLE_STACK_DUMPING: "1",
+    PLAYWRIGHT_SESSION: "true",
+    DISPLAY: ":0",
+    DEBUG: "pw:browser",
+};
+
+const dismissPrivacyPolicy = async (page: Page) => {
+    if (await page.getByText("Opt Out").isVisible())
+        await page.getByText("Opt Out").click();
+};
+
+/**ENV ELECTRON_NO_SANDBOX=1
+ENV ELECTRON_DISABLE_SECURITY_WARNINGS=1
+ENV ELECTRON_ENABLE_LOGGING=1
+ENV ELECTRON_ENABLE_STACK_DUMPING=1
+ENV ELECTRON_DISABLE_AUDIO=1
+ENV ELECTRON_IPC_BUFFER_SIZE=65536 */
+
 export const test = base.extend<MyFixtures>({
     electronApp: async ({}, use) => {
         // Ensure the temporary directory exists
@@ -59,13 +81,14 @@ export const test = base.extend<MyFixtures>({
         let browser: ElectronApplication | undefined;
         try {
             browser = await electron.launch({
-                args: [mainFile, tempDatabaseFile],
-                env: {
-                    ...process.env,
-                    ELECTRON_ENABLE_LOGGING: "1",
-                    ELECTRON_ENABLE_STACK_DUMPING: "1",
-                    PLAYWRIGHT_SESSION: "true",
-                },
+                args: [
+                    mainFile,
+                    tempDatabaseFile,
+                    "--no-audio",
+                    "--disable-audio-output",
+                    "--disable-audio-input",
+                ],
+                env: PLAYWRIGHT_ENV,
             });
 
             // Capture main process logs (optional, but good for debugging)
@@ -77,6 +100,14 @@ export const test = base.extend<MyFixtures>({
             });
             const page = await browser.firstWindow();
 
+            // Check that the app is loaded in with the canvas visible
+            await expect(page.getByText("FileAlignmentView")).toBeVisible();
+            await expect(page.getByText("InspectorPage")).toBeVisible();
+            await expect(
+                page.locator("div").filter({ hasText: /^Timeline$/ }),
+            ).toBeVisible();
+            await expect(page.locator("canvas").nth(1)).toBeVisible();
+            await dismissPrivacyPolicy(page);
             // Provide the ElectronApp instance to the test
             await use({ app: browser, databasePath: tempDatabaseFile, page });
         } finally {
@@ -95,13 +126,14 @@ export const test = base.extend<MyFixtures>({
         let browser: ElectronApplication | undefined;
         try {
             browser = await electron.launch({
-                args: [mainFile, "."],
-                env: {
-                    ...process.env,
-                    ELECTRON_ENABLE_LOGGING: "1",
-                    ELECTRON_ENABLE_STACK_DUMPING: "1",
-                    PLAYWRIGHT_SESSION: "true",
-                },
+                args: [
+                    mainFile,
+                    ".",
+                    "--no-audio",
+                    "--disable-audio-output",
+                    "--disable-audio-input",
+                ],
+                env: PLAYWRIGHT_ENV,
             });
 
             // Capture main process logs (optional, but good for debugging)
@@ -111,7 +143,14 @@ export const test = base.extend<MyFixtures>({
             browser.process().stderr?.on("data", (data) => {
                 console.log("[MAIN STDERR]", data.toString().trim());
             });
+
             const page = await browser.firstWindow();
+
+            // Check that the app is loaded in with the launch message visible
+            await expect(page.getByRole("heading")).toContainText(
+                "Welcome to OpenMarch",
+            );
+            await dismissPrivacyPolicy(page);
 
             // Provide the ElectronApp instance to the test
             await use({ app: browser, page });

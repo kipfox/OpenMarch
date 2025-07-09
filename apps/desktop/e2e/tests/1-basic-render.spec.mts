@@ -13,9 +13,10 @@ test("Launch page is visible", async ({ electronAppEmpty }) => {
     await expect(page.getByRole("heading")).toContainText(
         "Welcome to OpenMarch",
     );
+    expect(true).toBe(false);
 });
 
-test.skip("Launch page sub-menus", async ({ electronAppEmpty }) => {
+test("Launch page sub-menus", async ({ electronAppEmpty }) => {
     const { page } = electronAppEmpty;
     await page.getByRole("tab", { name: "Learn" }).click();
     await expect(page.getByRole("heading", { name: "Learn" })).toBeVisible();
@@ -52,25 +53,36 @@ test("Canvas is visible", async ({ electronApp }) => {
     await expect(page.locator("canvas").nth(1)).toBeVisible();
 });
 
-test.skip("Toolbars are visible", async ({ electronApp }) => {
+test("Toolbars are visible", async ({ electronApp }) => {
     const { page } = electronApp;
+    await expect(page.getByText("FileAlignmentView")).toBeVisible();
+    await expect(page.locator("canvas").nth(1)).toBeVisible();
+    await expect(page.getByText("InspectorPage")).toBeVisible();
+    await page.screenshot({
+        path: "e2e/tests/file-tab-debug.png",
+    });
+
+    console.log("clicking file tab");
     await page.getByRole("tab", { name: "File" }).click();
     await expect(page.getByText("Open FileNew FileSave Copy")).toBeVisible();
+    console.log("clicking view tab");
     await page.getByRole("tab", { name: "View" }).click();
+    console.log("clicking prev paths");
     await expect(page.getByText("Prev pathsNext paths")).toBeVisible();
+    console.log("clicking alignment tab");
     await page.getByRole("tab", { name: "Alignment" }).click();
     await expect(
         page.getByRole("tabpanel", { name: "Alignment" }).locator("div").nth(3),
     ).toBeVisible();
 });
-test.skip("Add music shows music tab", async ({ electronApp }) => {
+test("Add music shows music tab", async ({ electronApp }) => {
     const { page } = electronApp;
     await page.getByRole("button", { name: "Add Music" }).click();
     await expect(page.locator("header")).toContainText("Music");
     await page.locator("header").getByRole("button").click();
 });
 
-test.skip("Export modal is visible", async ({ electronApp }) => {
+test("Export modal is visible", async ({ electronApp }) => {
     const { page } = electronApp;
     await page.getByRole("tab", { name: "File" }).click();
     await page.getByRole("button", { name: "Export" }).click();
@@ -88,7 +100,7 @@ test.skip("Export modal is visible", async ({ electronApp }) => {
     ).not.toBeVisible();
 });
 
-test.skip("Sidebars are visible", async ({ electronApp }) => {
+test("Sidebars are visible", async ({ electronApp }) => {
     const { page } = electronApp;
     await page.locator("#sidebar").getByRole("button").first().click();
     await expect(page.getByRole("heading", { name: "Marchers" })).toBeVisible();
@@ -112,7 +124,7 @@ test.skip("Sidebars are visible", async ({ electronApp }) => {
     ).toBeVisible();
     await expect(page.locator("header")).toBeVisible();
 });
-test.skip("Field properties customizer tabs are visible", async ({
+test("Field properties customizer tabs are visible", async ({
     electronApp,
 }) => {
     const { page } = electronApp;
