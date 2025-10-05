@@ -6,7 +6,12 @@ import {
 } from "@tanstack/react-query";
 import { marcherPagesByPageQueryOptions } from "./useMarcherPages";
 import { Pathway, pathwaysByPageQueryOptions } from "./usePathways";
-import { CoordinateDefinition, MarcherTimeline } from "@/utilities/Keyframes";
+import {
+    CoordinateDefinition,
+    CoordinatesByMarcherIdByTimestamp,
+    generateCoordinatesForPage,
+    MarcherTimeline,
+} from "@/utilities/Keyframes";
 import { assert } from "@/utilities/utils";
 import { MarcherPagesByMarcher } from "@/global/classes/MarcherPageIndex";
 import { DEFAULT_STALE_TIME } from "./constants";
@@ -119,12 +124,17 @@ const getMarcherTimelines = (
     return timelinesByMarcherId;
 };
 
+type CoordinateDataQueryResult = {
+    marcherTimelines: MarcherTimelinesByMarcherId;
+    coordinatesByMarcherIdByTimestamp: CoordinatesByMarcherIdByTimestamp;
+};
+
 // --- coordinate data options (pure; no hooks) ---
 export const coordinateDataQueryOptions = (
     page: { id: number; duration: number; timestamp: number },
     qc: ReturnType<typeof useQueryClient>,
 ) =>
-    queryOptions({
+    queryOptions<CoordinateDataQueryResult>({
         // eslint-disable-next-line @tanstack/query/exhaustive-deps
         queryKey: coordinateDataKeys.byPage(page),
         queryFn: async () => {
@@ -142,11 +152,22 @@ export const coordinateDataQueryOptions = (
                 pathwaysPromise,
             ]);
 
-            return getMarcherTimelines(
+            const marcherTimelines = getMarcherTimelines(
                 (page.timestamp + page.duration) * 1000,
                 marcherPages ?? {},
                 pathways ?? {},
             );
+
+            const coordinatesByMarcherIdByTimestamp =
+                generateCoordinatesForPage({
+                    page,
+                    marcherTimelinesByMarcherId: marcherTimelines,
+                });
+
+            return {
+                marcherTimelines,
+                coordinatesByMarcherIdByTimestamp,
+            };
         },
         staleTime: DEFAULT_STALE_TIME,
     });
@@ -185,11 +206,43 @@ export const combineMarcherTimelines = (
     return combinedTimelines;
 };
 
+export const combineCoordinatesByMarcherIdByTimestamp = (
+    coordinateDataQueryResults: CoordinatesByMarcherIdByTimestamp[],
+): CoordinatesByMarcherIdByTimestamp => {
+    console.debug("coordinateDataQueryResults", coordinateDataQueryResults);
+    const combinedCoordinatesByMarcherIdByTimestamp = new Map();
+    for (const result of coordinateDataQueryResults) {
+        for (const [timestamp, coordinates] of result.entries()) {
+            combinedCoordinatesByMarcherIdByTimestamp.set(
+                timestamp,
+                coordinates,
+            );
+        }
+    }
+    console.debug(
+        "combinedCoordinatesByMarcherIdByTimestamp",
+        combinedCoordinatesByMarcherIdByTimestamp,
+    );
+    return combinedCoordinatesByMarcherIdByTimestamp;
+};
+
 const combineQueryResults = (
-    results: UseQueryResult<Map<number, MarcherTimeline>>[],
+    results: UseQueryResult<CoordinateDataQueryResult>[],
 ) => {
+    const marcherTimelines = combineMarcherTimelines(
+        results.map((r) => r.data?.marcherTimelines ?? new Map()),
+    );
+    const coordinatesByMarcherIdByTimestamp =
+        combineCoordinatesByMarcherIdByTimestamp(
+            results.map(
+                (r) => r.data?.coordinatesByMarcherIdByTimestamp ?? new Map(),
+            ),
+        );
     const output = {
-        data: combineMarcherTimelines(results.map((r) => r.data ?? new Map())),
+        data: {
+            marcherTimelines,
+            coordinatesByMarcherIdByTimestamp,
+        },
         isPending: results.some((r) => r.isPending),
         isFetching: results.some((r) => r.isFetching),
         error: results.find((r) => r.error)?.error,

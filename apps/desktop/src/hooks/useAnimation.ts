@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useIsPlaying } from "@/context/IsPlayingContext";
 import OpenMarchCanvas from "@/global/classes/canvasObjects/OpenMarchCanvas";
-import { getCoordinatesAtTime } from "@/utilities/Keyframes";
+import { CoordinateLookup } from "@/utilities/Keyframes";
 import { getLivePlaybackPosition } from "@/components/timeline/audio/AudioPlayer";
 import { useTimingObjects } from "@/hooks";
 import { useSelectedPage } from "@/context/SelectedPageContext";
@@ -35,16 +35,23 @@ export const useAnimation = ({ canvas }: UseAnimationProps) => {
 
     // The number of pages +/- to fetch
     const PAGE_DELTA = 2;
-    const { data: marcherTimelines } = useManyCoordinateData(
+    const { data: manyCoordinateData } = useManyCoordinateData(
         selectedPage
             ? pages.filter(
                   (p) => Math.abs(p.order - selectedPage.order) <= PAGE_DELTA,
               )
             : [],
     );
+    const { coordinatesByMarcherIdByTimestamp } = manyCoordinateData;
+
+    // Create efficient coordinate lookup instance
+    const coordinateLookup = useMemo(() => {
+        return new CoordinateLookup(coordinatesByMarcherIdByTimestamp);
+    }, [coordinatesByMarcherIdByTimestamp]);
 
     const animationFrameRef = useRef<number | null>(null);
 
+    // TODO - THESE ARE THE COLLISIONS
     // const marcherTimelines = useMemo(() => {
     //     if (
     //         // !midsetsLoaded ||
@@ -165,21 +172,17 @@ export const useAnimation = ({ canvas }: UseAnimationProps) => {
 
             const canvasMarchers = canvas.getCanvasMarchers();
             for (const canvasMarcher of canvasMarchers) {
-                const timeline = marcherTimelines.get(
+                // Use efficient coordinate lookup that avoids binary search on every frame
+                const coords = coordinateLookup.getCoordinates(
+                    timeMilliseconds,
                     canvasMarcher.marcherObj.id,
                 );
 
-                if (timeline) {
-                    // try {
-                    const coords = getCoordinatesAtTime(
-                        timeMilliseconds,
-                        timeline,
-                    );
-                    if (!coords) output = false;
-                    else canvasMarcher.setLiveCoordinates(coords);
+                if (coords) {
+                    canvasMarcher.setLiveCoordinates(coords);
                 } else {
                     console.debug(
-                        `Marcher ${canvasMarcher.marcherObj.id} has no timeline at time ${timeMilliseconds}`,
+                        `Marcher ${canvasMarcher.marcherObj.id} has no coordinates at time ${timeMilliseconds}`,
                     );
                     output = false;
                 }
@@ -188,7 +191,7 @@ export const useAnimation = ({ canvas }: UseAnimationProps) => {
             canvas.requestRenderAll();
             return output;
         },
-        [canvas, marcherTimelines],
+        [canvas, coordinateLookup],
     );
 
     // Update the selected page based on playback timestamp
@@ -260,7 +263,6 @@ export const useAnimation = ({ canvas }: UseAnimationProps) => {
         canvas,
         setMarcherPositionsAtTime,
         updateSelectedPage,
-        marcherTimelines,
         setIsPlaying,
     ]);
 

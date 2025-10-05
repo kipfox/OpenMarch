@@ -159,3 +159,270 @@ export function findSurroundingTimestamps({
     // timestamps[low] is the value after the target.
     return { current: sortedTimestamps[high], next: sortedTimestamps[low] };
 }
+
+/**
+ * A map of marcher IDs to their coordinates at a given timestamp.
+ *
+ * ```ts
+ * const timestamp = 1000;
+ * const marcherId = 1;
+ * const coordinate = map.get(timestamp).get(marcherId);
+ * ```
+ */
+export type CoordinatesByMarcherIdByTimestamp = Map<
+    number,
+    Map<number, Coordinate>
+>;
+/**
+ * Generate coordinates for a page.
+ *
+ * @param page - The page to generate coordinates for.
+ * @param sampleRatePerSecond - The sample rate per second.
+ * @returns The coordinates for the page.
+ */
+export function generateCoordinatesForPage({
+    page,
+    sampleRatePerSecond = 30,
+    marcherTimelinesByMarcherId,
+}: {
+    page: { timestamp: number; duration: number };
+    sampleRatePerSecond?: number;
+    marcherTimelinesByMarcherId: Map<number, MarcherTimeline>;
+}) {
+    const coordinatesByMarcherIdByTimestamp: CoordinatesByMarcherIdByTimestamp =
+        new Map();
+
+    const startTime = page.timestamp * 1000; // Convert to milliseconds
+    const endTime = (page.timestamp + page.duration) * 1000; // Convert to milliseconds
+    const timeInterval = 1000 / sampleRatePerSecond; // Milliseconds between samples
+    console.debug("startTime", startTime);
+    console.debug("endTime", endTime);
+    console.debug("timeInterval", timeInterval);
+    console.debug("marcherTimelinesByMarcherId", marcherTimelinesByMarcherId);
+
+    for (
+        let currentTime = startTime;
+        currentTime <= endTime;
+        currentTime += timeInterval
+    ) {
+        console.debug("currentTime", currentTime);
+        for (const [
+            marcherId,
+            marcherTimeline,
+        ] of marcherTimelinesByMarcherId.entries()) {
+            console.debug("marcherId", marcherId);
+            const coordinate = getCoordinatesAtTime(
+                currentTime,
+                marcherTimeline,
+            );
+            if (!coordinate) continue;
+
+            if (!coordinatesByMarcherIdByTimestamp.has(currentTime))
+                coordinatesByMarcherIdByTimestamp.set(currentTime, new Map());
+            coordinatesByMarcherIdByTimestamp
+                .get(currentTime)!
+                .set(marcherId, coordinate);
+        }
+    }
+    console.debug(
+        "coordinatesByMarcherIdByTimestamp",
+        coordinatesByMarcherIdByTimestamp,
+    );
+    return coordinatesByMarcherIdByTimestamp;
+}
+
+/**
+ * Efficient coordinate lookup system that avoids binary search on every frame.
+ * Uses a stateful iterator pattern to track current position and only advance when needed.
+ */
+export class CoordinateLookup {
+    private availableTimestamps: number[];
+    private currentIndex: number = 0;
+
+    constructor(
+        private coordinatesByMarcherIdByTimestamp: CoordinatesByMarcherIdByTimestamp,
+    ) {
+        this.availableTimestamps = Array.from(
+            coordinatesByMarcherIdByTimestamp.keys(),
+        ).sort((a, b) => a - b);
+    }
+
+    /**
+     * Get coordinates for a marcher at a specific timestamp.
+     * Efficiently finds the position without binary search by tracking current index.
+     */
+    getCoordinates(
+        timestampMilliseconds: number,
+        marcherId: number,
+    ): Coordinate | null {
+        if (this.availableTimestamps.length === 0) {
+            return null;
+        }
+
+        // Fast path: if we're at the exact timestamp, return immediately
+        const currentTimestamp = this.availableTimestamps[this.currentIndex];
+        if (currentTimestamp === timestampMilliseconds) {
+            return this.getCoordinatesAtTimestamp(currentTimestamp, marcherId);
+        }
+
+        // Advance or retreat the index to find the right position
+        this.seekToTimestamp(timestampMilliseconds);
+
+        const current = this.availableTimestamps[this.currentIndex];
+        const next = this.availableTimestamps[this.currentIndex + 1];
+
+        if (current === undefined) {
+            return null;
+        }
+
+        // Get coordinates at the current timestamp
+        const currentCoordinates = this.getCoordinatesAtTimestamp(
+            current,
+            marcherId,
+        );
+        if (!currentCoordinates) {
+            return null;
+        }
+
+        // If no next timestamp or we're at the exact timestamp, return current coordinates
+        if (next === undefined || current === timestampMilliseconds) {
+            return currentCoordinates;
+        }
+
+        // Get coordinates at the next timestamp
+        const nextCoordinates = this.getCoordinatesAtTimestamp(next, marcherId);
+        if (!nextCoordinates) {
+            return currentCoordinates;
+        }
+
+        // Calculate interpolation progress
+        const progress = (timestampMilliseconds - current) / (next - current);
+
+        // Interpolate between the two coordinates
+        return {
+            x:
+                currentCoordinates.x +
+                progress * (nextCoordinates.x - currentCoordinates.x),
+            y:
+                currentCoordinates.y +
+                progress * (nextCoordinates.y - currentCoordinates.y),
+        };
+    }
+
+    private getCoordinatesAtTimestamp(
+        timestamp: number,
+        marcherId: number,
+    ): Coordinate | null {
+        return (
+            this.coordinatesByMarcherIdByTimestamp
+                .get(timestamp)
+                ?.get(marcherId) || null
+        );
+    }
+
+    private seekToTimestamp(targetTimestamp: number): void {
+        // If we're already at the right position, don't seek
+        const currentTimestamp = this.availableTimestamps[this.currentIndex];
+        if (
+            currentTimestamp !== undefined &&
+            currentTimestamp <= targetTimestamp
+        ) {
+            const nextTimestamp =
+                this.availableTimestamps[this.currentIndex + 1];
+            if (
+                nextTimestamp === undefined ||
+                nextTimestamp > targetTimestamp
+            ) {
+                return; // We're already in the right position
+            }
+        }
+
+        // Reset to beginning if we're past the target
+        if (
+            currentTimestamp !== undefined &&
+            currentTimestamp > targetTimestamp
+        ) {
+            this.currentIndex = 0;
+        }
+
+        // Advance to the right position
+        while (this.currentIndex < this.availableTimestamps.length - 1) {
+            const current = this.availableTimestamps[this.currentIndex];
+            const next = this.availableTimestamps[this.currentIndex + 1];
+
+            if (
+                current <= targetTimestamp &&
+                (next === undefined || next > targetTimestamp)
+            ) {
+                break; // Found the right position
+            }
+
+            this.currentIndex++;
+        }
+    }
+}
+
+/**
+ * Get coordinates for a marcher at a specific timestamp, interpolating between pre-calculated coordinates if necessary.
+ * This is the old function kept for backward compatibility, but it's inefficient for animation.
+ *
+ * @deprecated Use CoordinateLookup class for better performance during animation
+ */
+export function getCoordinatesFromPreCalculated(
+    timestampMilliseconds: number,
+    marcherId: number,
+    coordinatesByMarcherIdByTimestamp: CoordinatesByMarcherIdByTimestamp,
+): Coordinate | null {
+    // Get all available timestamps
+    const availableTimestamps = Array.from(
+        coordinatesByMarcherIdByTimestamp.keys(),
+    ).sort((a, b) => a - b);
+
+    if (availableTimestamps.length === 0) {
+        return null;
+    }
+
+    // Find surrounding timestamps
+    const { current, next } = findSurroundingTimestamps({
+        sortedTimestamps: availableTimestamps,
+        targetTimestamp: timestampMilliseconds,
+    });
+
+    if (current === null) {
+        return null;
+    }
+
+    // Get coordinates at the current timestamp
+    const currentCoordinates = coordinatesByMarcherIdByTimestamp
+        .get(current)
+        ?.get(marcherId);
+    if (!currentCoordinates) {
+        return null;
+    }
+
+    // If no next timestamp or we're at the exact timestamp, return current coordinates
+    if (next === null || current === timestampMilliseconds) {
+        return currentCoordinates;
+    }
+
+    // Get coordinates at the next timestamp
+    const nextCoordinates = coordinatesByMarcherIdByTimestamp
+        .get(next)
+        ?.get(marcherId);
+    if (!nextCoordinates) {
+        return currentCoordinates;
+    }
+
+    // Calculate interpolation progress
+    const progress = (timestampMilliseconds - current) / (next - current);
+
+    // Interpolate between the two coordinates
+    return {
+        x:
+            currentCoordinates.x +
+            progress * (nextCoordinates.x - currentCoordinates.x),
+        y:
+            currentCoordinates.y +
+            progress * (nextCoordinates.y - currentCoordinates.y),
+    };
+}
