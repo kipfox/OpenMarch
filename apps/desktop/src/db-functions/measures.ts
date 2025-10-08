@@ -1,4 +1,4 @@
-import { eq, inArray } from "drizzle-orm";
+import { count, eq, inArray } from "drizzle-orm";
 import {
     DbConnection,
     DbTransaction,
@@ -247,4 +247,16 @@ export const deleteMeasuresInTransaction = async ({
         .returning();
 
     return deletedItems.map(realDatabaseMeasureToDatabaseMeasure);
+};
+
+export const anyMeasuresExist = async ({
+    db,
+}: {
+    db: DbConnection | DbTransaction;
+}): Promise<boolean> => {
+    const result = await db
+        .select({ count: count() })
+        .from(schema.measures)
+        .get();
+    return !!result && result.count > 0;
 };

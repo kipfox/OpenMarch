@@ -535,7 +535,7 @@
         "addNewTempoGroupAfter": "Add a new tempo group after this one",
         "addTempoGroup": "Add New Group",
         "defaultTempo": "Default Tempo",
-        "defaultTempoTooltip": "The default tempo used when creating new tempo groups. This sets the initial BPM for new shows.",
+        "defaultTempoTooltip": "The default tempo used in the app. When pages are created without tempo groups, this tempo will be used.",
         "audio": "Audio",
         "audioFile": "Audio File",
         "beatPattern": "Beat Pattern *",

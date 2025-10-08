@@ -5,6 +5,7 @@ import {
     deleteBeats,
     shiftBeats,
     flattenOrder,
+    updateAllBeatDurations,
     FIRST_BEAT_ID,
     DatabaseBeat,
 } from "../beat";
@@ -1340,5 +1341,436 @@ describeDbTests("beats", (it) => {
                 await expectNumberOfChanges.test(db, 1, databaseState);
             },
         );
+    });
+
+    describe("updateAllBeatDurations", () => {
+        describe("basic functionality", () => {
+            testWithHistory(
+                "should update duration of all beats except first beat",
+                async ({ db, expectNumberOfChanges }) => {
+                    // Create some beats first
+                    const existingBeatsArgs = [
+                        {
+                            duration: 0.5,
+                            include_in_measure: true,
+                            notes: "first beat",
+                        },
+                        {
+                            duration: 0.75,
+                            include_in_measure: false,
+                            notes: "second beat",
+                        },
+                        {
+                            duration: 1.0,
+                            include_in_measure: true,
+                            notes: "third beat",
+                        },
+                    ];
+
+                    await createBeats({
+                        newBeats: existingBeatsArgs,
+                        db,
+                    });
+
+                    const databaseState =
+                        await expectNumberOfChanges.getDatabaseState(db);
+
+                    // Update all beat durations
+                    const newDuration = 2.5;
+                    const result = await updateAllBeatDurations({
+                        db,
+                        duration: newDuration,
+                    });
+
+                    // Should return all beats except the first beat (FIRST_BEAT_ID = 0)
+                    expect(result).toHaveLength(3);
+                    expect(
+                        result.every((beat) => beat.duration === newDuration),
+                    ).toBe(true);
+                    expect(
+                        result.every((beat) => beat.id > FIRST_BEAT_ID),
+                    ).toBe(true);
+
+                    // Verify database state
+                    const allBeats = await db.query.beats.findMany({
+                        orderBy: schema.beats.position,
+                    });
+
+                    // First beat should remain unchanged (cannot be modified)
+                    expect(allBeats[0].duration).toBe(0); // First beat default duration
+                    // All other beats should have updated duration
+                    expect(allBeats[1].duration).toBe(newDuration);
+                    expect(allBeats[2].duration).toBe(newDuration);
+                    expect(allBeats[3].duration).toBe(newDuration);
+
+                    await expectNumberOfChanges.test(db, 1, databaseState);
+                },
+            );
+
+            testWithHistory(
+                "should work with zero duration",
+                async ({ db, expectNumberOfChanges }) => {
+                    // Create some beats
+                    await createBeats({
+                        newBeats: [
+                            {
+                                duration: 1.5,
+                                include_in_measure: true,
+                                notes: "test beat 1",
+                            },
+                            {
+                                duration: 2.0,
+                                include_in_measure: false,
+                                notes: "test beat 2",
+                            },
+                        ],
+                        db,
+                    });
+
+                    const databaseState =
+                        await expectNumberOfChanges.getDatabaseState(db);
+
+                    // Update to zero duration
+                    const result = await updateAllBeatDurations({
+                        db,
+                        duration: 0,
+                    });
+
+                    expect(result).toHaveLength(2);
+                    expect(result.every((beat) => beat.duration === 0)).toBe(
+                        true,
+                    );
+                    expect(
+                        result.every((beat) => beat.id > FIRST_BEAT_ID),
+                    ).toBe(true);
+
+                    await expectNumberOfChanges.test(db, 1, databaseState);
+                },
+            );
+
+            testWithHistory(
+                "should work with very small duration values",
+                async ({ db, expectNumberOfChanges }) => {
+                    // Create some beats
+                    await createBeats({
+                        newBeats: [
+                            {
+                                duration: 1.0,
+                                include_in_measure: true,
+                                notes: "test beat 1",
+                            },
+                            {
+                                duration: 2.0,
+                                include_in_measure: false,
+                                notes: "test beat 2",
+                            },
+                        ],
+                        db,
+                    });
+
+                    const databaseState =
+                        await expectNumberOfChanges.getDatabaseState(db);
+
+                    // Update to very small duration (minimum allowed by constraint)
+                    const smallDuration = 0.001;
+                    const result = await updateAllBeatDurations({
+                        db,
+                        duration: smallDuration,
+                    });
+
+                    expect(result).toHaveLength(2);
+                    expect(
+                        result.every((beat) => beat.duration === smallDuration),
+                    ).toBe(true);
+                    expect(
+                        result.every((beat) => beat.id > FIRST_BEAT_ID),
+                    ).toBe(true);
+
+                    await expectNumberOfChanges.test(db, 1, databaseState);
+                },
+            );
+
+            testWithHistory(
+                "should work with large duration values",
+                async ({ db, expectNumberOfChanges }) => {
+                    // Create some beats
+                    await createBeats({
+                        newBeats: [
+                            {
+                                duration: 0.1,
+                                include_in_measure: true,
+                                notes: "test beat 1",
+                            },
+                            {
+                                duration: 0.5,
+                                include_in_measure: false,
+                                notes: "test beat 2",
+                            },
+                        ],
+                        db,
+                    });
+
+                    const databaseState =
+                        await expectNumberOfChanges.getDatabaseState(db);
+
+                    // Update to large duration
+                    const largeDuration = 999.99;
+                    const result = await updateAllBeatDurations({
+                        db,
+                        duration: largeDuration,
+                    });
+
+                    expect(result).toHaveLength(2);
+                    expect(
+                        result.every((beat) => beat.duration === largeDuration),
+                    ).toBe(true);
+                    expect(
+                        result.every((beat) => beat.id > FIRST_BEAT_ID),
+                    ).toBe(true);
+
+                    await expectNumberOfChanges.test(db, 1, databaseState);
+                },
+            );
+        });
+
+        describe("edge cases", () => {
+            testWithHistory(
+                "should work when no beats exist except first beat",
+                async ({ db, expectNumberOfChanges }) => {
+                    const databaseState =
+                        await expectNumberOfChanges.getDatabaseState(db);
+
+                    // Should work with just the default first beat (no other beats to update)
+                    const result = await updateAllBeatDurations({
+                        db,
+                        duration: 1.25,
+                    });
+
+                    expect(result).toHaveLength(0); // No beats to update
+
+                    await expectNumberOfChanges.test(db, 0, databaseState);
+                },
+            );
+
+            testWithHistory(
+                "should preserve other beat properties",
+                async ({ db, expectNumberOfChanges }) => {
+                    // Create beats with specific properties
+                    await createBeats({
+                        newBeats: [
+                            {
+                                duration: 2.0,
+                                include_in_measure: true,
+                                notes: "important notes",
+                            },
+                            {
+                                duration: 1.5,
+                                include_in_measure: false,
+                                notes: "other notes",
+                            },
+                        ],
+                        db,
+                    });
+
+                    const databaseState =
+                        await expectNumberOfChanges.getDatabaseState(db);
+
+                    const result = await updateAllBeatDurations({
+                        db,
+                        duration: 3.0,
+                    });
+
+                    expect(result).toHaveLength(2);
+                    expect(result.every((beat) => beat.duration === 3.0)).toBe(
+                        true,
+                    );
+                    expect(
+                        result.every((beat) => beat.id > FIRST_BEAT_ID),
+                    ).toBe(true);
+
+                    // Find the specific beats to verify their properties
+                    const beat1 = result.find(
+                        (beat) => beat.notes === "important notes",
+                    );
+                    const beat2 = result.find(
+                        (beat) => beat.notes === "other notes",
+                    );
+
+                    expect(beat1).toBeDefined();
+                    expect(beat1!.include_in_measure).toBe(true);
+                    expect(beat1!.notes).toBe("important notes");
+
+                    expect(beat2).toBeDefined();
+                    expect(beat2!.include_in_measure).toBe(false);
+                    expect(beat2!.notes).toBe("other notes");
+
+                    await expectNumberOfChanges.test(db, 1, databaseState);
+                },
+            );
+
+            testWithHistory(
+                "should work with decimal precision",
+                async ({ db, expectNumberOfChanges }) => {
+                    await createBeats({
+                        newBeats: [
+                            {
+                                duration: 1.0,
+                                include_in_measure: true,
+                                notes: "test beat 1",
+                            },
+                            {
+                                duration: 2.0,
+                                include_in_measure: false,
+                                notes: "test beat 2",
+                            },
+                        ],
+                        db,
+                    });
+
+                    const databaseState =
+                        await expectNumberOfChanges.getDatabaseState(db);
+
+                    // Test with high precision decimal
+                    const preciseDuration = 1.23456789;
+                    const result = await updateAllBeatDurations({
+                        db,
+                        duration: preciseDuration,
+                    });
+
+                    expect(result).toHaveLength(2);
+                    expect(
+                        result.every(
+                            (beat) => beat.duration === preciseDuration,
+                        ),
+                    ).toBe(true);
+                    expect(
+                        result.every((beat) => beat.id > FIRST_BEAT_ID),
+                    ).toBe(true);
+
+                    await expectNumberOfChanges.test(db, 1, databaseState);
+                },
+            );
+        });
+
+        describe("multiple calls", () => {
+            testWithHistory(
+                "should handle multiple consecutive updates",
+                async ({ db, expectNumberOfChanges }) => {
+                    await createBeats({
+                        newBeats: [
+                            {
+                                duration: 1.0,
+                                include_in_measure: true,
+                                notes: "test beat 1",
+                            },
+                            {
+                                duration: 2.0,
+                                include_in_measure: false,
+                                notes: "test beat 2",
+                            },
+                        ],
+                        db,
+                    });
+
+                    const databaseState =
+                        await expectNumberOfChanges.getDatabaseState(db);
+
+                    // First update
+                    let result = await updateAllBeatDurations({
+                        db,
+                        duration: 2.0,
+                    });
+
+                    expect(result).toHaveLength(2);
+                    expect(result.every((beat) => beat.duration === 2.0)).toBe(
+                        true,
+                    );
+
+                    // Second update
+                    result = await updateAllBeatDurations({
+                        db,
+                        duration: 3.0,
+                    });
+
+                    expect(result).toHaveLength(2);
+                    expect(result.every((beat) => beat.duration === 3.0)).toBe(
+                        true,
+                    );
+
+                    // Third update
+                    result = await updateAllBeatDurations({
+                        db,
+                        duration: 0.5,
+                    });
+
+                    expect(result).toHaveLength(2);
+                    expect(result.every((beat) => beat.duration === 0.5)).toBe(
+                        true,
+                    );
+
+                    // Verify final state
+                    const finalBeats = await db.query.beats.findMany({
+                        orderBy: schema.beats.position,
+                    });
+
+                    expect(finalBeats[0].duration).toBe(0); // First beat unchanged
+                    expect(finalBeats[1].duration).toBe(0.5); // Updated
+                    expect(finalBeats[2].duration).toBe(0.5); // Updated
+
+                    await expectNumberOfChanges.test(db, 3, databaseState);
+                },
+            );
+        });
+
+        describe("data integrity", () => {
+            testWithHistory(
+                "should return properly formatted DatabaseBeat objects",
+                async ({ db, expectNumberOfChanges }) => {
+                    await createBeats({
+                        newBeats: [
+                            {
+                                duration: 1.5,
+                                include_in_measure: true,
+                                notes: "test beat 1",
+                            },
+                            {
+                                duration: 2.0,
+                                include_in_measure: false,
+                                notes: "test beat 2",
+                            },
+                        ],
+                        db,
+                    });
+
+                    const databaseState =
+                        await expectNumberOfChanges.getDatabaseState(db);
+
+                    const result = await updateAllBeatDurations({
+                        db,
+                        duration: 2.5,
+                    });
+
+                    expect(result).toHaveLength(2);
+
+                    // Verify all beats have correct structure
+                    for (const beat of result) {
+                        // Verify all required properties are present and correctly typed
+                        expect(typeof beat.id).toBe("number");
+                        expect(typeof beat.duration).toBe("number");
+                        expect(typeof beat.include_in_measure).toBe("boolean");
+                        expect(typeof beat.position).toBe("number");
+                        expect(typeof beat.created_at).toBe("string");
+                        expect(typeof beat.updated_at).toBe("string");
+
+                        // Verify specific values
+                        expect(beat.id).toBeGreaterThan(FIRST_BEAT_ID);
+                        expect(beat.duration).toBe(2.5);
+                        expect(typeof beat.notes).toBe("string");
+                    }
+
+                    await expectNumberOfChanges.test(db, 1, databaseState);
+                },
+            );
+        });
     });
 });

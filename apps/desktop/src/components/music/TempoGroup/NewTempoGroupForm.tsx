@@ -9,9 +9,11 @@ import { InfoIcon } from "@phosphor-icons/react";
 import { Form, FormField, Label } from "@radix-ui/react-form";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import clsx from "clsx";
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo } from "react";
 import { mixedMeterPermutations } from "./TempoUtils";
 import { T, useTolgee } from "@tolgee/react";
+import { useQuery } from "@tanstack/react-query";
+import { getUtilityQueryOptions } from "@/hooks/queries";
 export const maxMixedMeterBeats = 30;
 
 interface NewTempoGroupFormProps {
@@ -24,7 +26,17 @@ const NewTempoGroupForm = React.forwardRef<
     HTMLDivElement,
     NewTempoGroupFormProps
 >((props, ref) => {
-    const [tempo, setTempo] = React.useState("120");
+    const { data: utilityData } = useQuery(getUtilityQueryOptions());
+
+    const [tempo, setTempo] = React.useState(
+        (60 / (utilityData?.default_beat_duration ?? 0.5)).toString(),
+    );
+
+    useEffect(() => {
+        if (utilityData?.default_beat_duration) {
+            setTempo((60 / utilityData.default_beat_duration).toString());
+        }
+    }, [utilityData]);
 
     const callback = React.useCallback(() => {
         setName("");
