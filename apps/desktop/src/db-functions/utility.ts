@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { DbConnection, DbTransaction } from "./types";
 import { schema } from "@/global/database/db";
 import { transactionWithHistory } from "./history";
+import { anyMeasuresExist, updateAllBeatDurations } from "@/db-functions";
 
 export type DatabaseUtility = typeof schema.utility.$inferSelect;
 
@@ -26,6 +27,25 @@ export async function getUtility({
     await initializeUtility({ db });
 
     return await db.query.utility.findFirst();
+}
+
+export async function _updateAllBeatsIfNoMeasuresExist({
+    tx,
+    newBeatDuration,
+}: {
+    tx: DbTransaction;
+    newBeatDuration: number;
+}) {
+    const anyMeasuresExistResult = await anyMeasuresExist({
+        db: tx,
+    });
+    if (!anyMeasuresExistResult) {
+        return await updateAllBeatDurations({
+            db: tx,
+            duration: newBeatDuration,
+        });
+    }
+    return;
 }
 
 /**
@@ -53,6 +73,12 @@ export async function updateUtility({
                     updated_at: new Date().toISOString(),
                 })
                 .where(eq(schema.utility.id, 0));
+
+            if (args.default_beat_duration)
+                await _updateAllBeatsIfNoMeasuresExist({
+                    tx,
+                    newBeatDuration: args.default_beat_duration,
+                });
 
             const updatedUtility = await tx.query.utility.findFirst();
             if (!updatedUtility) {

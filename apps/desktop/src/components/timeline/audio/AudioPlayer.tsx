@@ -135,7 +135,7 @@ export default function AudioPlayer() {
             float32Array.length,
             audioContext.sampleRate,
         );
-        void newBuffer.copyToChannel(float32Array, 0);
+        void newBuffer.copyToChannel(float32Array as any, 0);
 
         // Set the metronome buffer in state
         setMetronomeBuffer(newBuffer);
@@ -327,7 +327,7 @@ export default function AudioPlayer() {
             timingMarkersPlugin.current = null;
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [waveformRef, waveformBuffer, theme]);
+    }, [waveformRef, waveformBuffer, theme, beats, measures]);
 
     // Update metronome on/off state and volume
     useEffect(() => {

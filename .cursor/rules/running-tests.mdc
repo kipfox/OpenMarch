@@ -1,0 +1,16 @@
+---
+alwaysApply: true
+---
+
+# Running tests
+
+## Vitest
+
+- When testing an individual test, always "cd" into the folder of the monorepo project and run the test from there.
+- Run the test file using "pnpm exec vitest {args}"
+
+E.g. for a test in the desktop app
+
+```bash
+cd apps/desktop && pnpm exec vitest path/to/the/test-file.test.ts
+```

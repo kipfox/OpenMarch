@@ -493,3 +493,27 @@ export const deleteBeatsInTransaction = async ({
 
     return deletedBeats.map(realDatabaseBeatToDatabaseBeat);
 };
+
+/**
+ * Updates the duration of all beats in the database (except the first beat which cannot be modified).
+ *
+ * @param db The database connection
+ * @param duration The duration to set for all beats
+ * @returns List of updated beats
+ */
+export const updateAllBeatDurations = async ({
+    db,
+    duration,
+}: {
+    duration: number;
+    db: DbConnection | DbTransaction;
+}): Promise<DatabaseBeat[]> => {
+    const result = await db
+        .update(schema.beats)
+        .set({ duration })
+        .where(gt(schema.beats.id, FIRST_BEAT_ID))
+        .returning()
+        .all();
+
+    return result.map(realDatabaseBeatToDatabaseBeat);
+};

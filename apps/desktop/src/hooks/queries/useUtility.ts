@@ -10,6 +10,7 @@ import {
     DatabaseUtility,
 } from "@/db-functions";
 import { DEFAULT_STALE_TIME } from "./constants";
+import { beatKeys } from "./useBeats";
 
 const KEY_BASE = "utility";
 
@@ -43,11 +44,15 @@ export const updateUtilityMutationOptions = () =>
         mutationFn: async (args: ModifiedUtilityArgs) => {
             return await updateUtility({ db, args });
         },
-        onSuccess: () => {
+        onSuccess: (variables) => {
             // Invalidate utility queries to refetch the updated data
             void queryClient.invalidateQueries({
                 queryKey: utilityKeys.all(),
             });
+            if (variables.default_beat_duration)
+                void queryClient.invalidateQueries({
+                    queryKey: beatKeys.all(),
+                });
         },
         onError: (error) => {
             conToastError("Failed to update utility settings", error);

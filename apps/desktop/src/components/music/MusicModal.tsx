@@ -14,6 +14,7 @@ import TempoGroupCard from "./TempoGroup/TempoGroupCard";
 import NewTempoGroupForm from "./TempoGroup/NewTempoGroupForm";
 import { MusicNotesIcon } from "@phosphor-icons/react";
 import { T, useTolgee } from "@tolgee/react";
+import DefaultTempoEditor from "../DefaultTempoEditor";
 
 export default function MusicModal({
     label = <MusicNotesIcon size={24} />,
@@ -111,6 +112,7 @@ function MusicModalContents() {
                 <div className="flex flex-col gap-16">
                     <MusicXmlSelector />
                 </div>
+                <DefaultTempoEditor />
                 <div id="tempo-groups" className="mx-12 flex flex-col gap-8">
                     {tempoGroups.map((tempoGroup, i) => (
                         <div
