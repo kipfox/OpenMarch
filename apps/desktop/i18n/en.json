@@ -534,6 +534,8 @@
         "accent": "Accent first beat",
         "addNewTempoGroupAfter": "Add a new tempo group after this one",
         "addTempoGroup": "Add New Group",
+        "defaultTempo": "Default Tempo",
+        "defaultTempoTooltip": "The default tempo used when creating new tempo groups. This sets the initial BPM for new shows.",
         "audio": "Audio",
         "audioFile": "Audio File",
         "beatPattern": "Beat Pattern *",
@@ -759,6 +761,9 @@
         "skipVersion": "Skip this version",
         "title": "New Version Available",
         "trigger": "New Version Available!"
+    },
+    "general": {
+        "errorLoading": "Error loading"
     },
     "welcome": {
         "description": "No files found. Create one, and make sure to check out the guides. Customize your theme and navigation in Settings.",

@@ -529,6 +529,8 @@
         "accent": "アクセントの1拍目",
         "addNewTempoGroupAfter": "この後に新しいテンポ グループを追加",
         "addTempoGroup": "新しいグループを追加",
+        "defaultTempo": "デフォルトテンポ",
+        "defaultTempoTooltip": "新しいテンポグループを作成する際に使用されるデフォルトテンポ。新しいショーの初期BPMを設定します。",
         "audio": "オーディオ",
         "audioFile": "オーディオ ファイル",
         "beatPattern": "拍子パターン *",
@@ -747,6 +749,9 @@
         "skipVersion": "このバージョンをスキップ",
         "title": "新しい バージョン が 利用可能",
         "trigger": "新しい バージョン が 利用可能！"
+    },
+    "general": {
+        "errorLoading": "読み込みエラー"
     },
     "welcome": {
         "description": "ファイルが見つかりません。 1 つ作成し、ガイドを確認してください。 設定でテーマとナビゲーションをカスタマイズしてください。",
