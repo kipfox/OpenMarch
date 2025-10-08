@@ -10,6 +10,7 @@ export type DatabaseUtility = typeof schema.utility.$inferSelect;
  */
 export interface ModifiedUtilityArgs {
     last_page_counts?: number;
+    default_beat_duration?: number;
 }
 
 /**
@@ -83,6 +84,7 @@ export async function initializeUtility({
         .values({
             id: 0,
             last_page_counts: 8,
+            default_beat_duration: 0.5, // 120 bpm
         })
         .returning();
 

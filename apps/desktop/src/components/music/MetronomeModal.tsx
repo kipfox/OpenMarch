@@ -14,6 +14,8 @@ import { useMetronomeStore } from "@/stores/MetronomeStore";
 import { BEAT_STYLE_IDS, BeatStyleId } from "@openmarch/metronome";
 import { T } from "@tolgee/react";
 import { useIsPlaying } from "@/context/IsPlayingContext";
+import DefaultTempoEditor from "../DefaultTempoEditor";
+import { Form } from "@radix-ui/react-form";
 
 export default function MetronomeModal({
     label = <MetronomeIcon size={24} />,
@@ -169,6 +171,7 @@ function MetronomeModalContents() {
                             </SelectContent>
                         </Select>
                     </div>
+                    <DefaultTempoEditor />
                 </div>
             </div>
         </div>

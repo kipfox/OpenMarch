@@ -529,6 +529,8 @@
         "accent": "Acento na primeira batida",
         "addNewTempoGroupAfter": "Adicionar um novo grupo de tempo após este",
         "addTempoGroup": "Adicionar Novo Grupo",
+        "defaultTempo": "Tempo Padrão",
+        "defaultTempoTooltip": "O tempo padrão usado ao criar novos grupos de tempo. Isso define o BPM inicial para novos shows.",
         "audio": "Áudio",
         "audioFile": "Arquivo de Áudio",
         "beatPattern": "Padrão de Batida *",
@@ -747,6 +749,9 @@
         "skipVersion": "Pular esta versão",
         "title": "Nova Versão Disponível",
         "trigger": "Nova Versão Disponível!"
+    },
+    "general": {
+        "errorLoading": "Erro ao carregar"
     },
     "welcome": {
         "description": "Nenhum arquivo encontrado. Crie um e não deixe de conferir os guias. Personalize seu tema e navegação em Configurações.",
