@@ -1,0 +1,578 @@
+---
+description: When creating new user-facing text
+alwaysApply: false
+---
+
+# Localization Guidelines
+
+OpenMarch uses [Tolgee](https://tolgee.io/) for internationalization (i18n) and localization. All user-facing text must be localized to support multiple languages.
+
+## Translation Files
+
+Translation files are located in `apps/desktop/i18n/`:
+
+- `en.json` - English (primary language)
+- `es.json` - Spanish
+- `pt-BR.json` - Portuguese (Brazil)
+- `ja.json` - Japanese
+
+## What Needs to be Localized
+
+### ✅ MUST be localized
+
+- Button text and labels
+- Dialog/modal titles and content
+- Popup messages and notifications
+- Tooltip text
+- Form labels and placeholders
+- User-facing error messages
+- Menu items
+- Status messages
+- Any text visible to the user in the UI
+
+### ❌ Does NOT need to be localized
+
+- Console error logs (`console.error`, `console.warn`, `console.log`)
+- Debug messages
+- Developer-facing error messages in try/catch blocks
+- Internal error messages that are only logged
+
+## Translation Key Structure
+
+Use a hierarchical dot notation for translation keys:
+
+```json
+{
+    "componentName": {
+        "section": {
+            "action": "Text here",
+            "actionTooltip": "Tooltip text here"
+        }
+    }
+}
+```
+
+### Examples:
+
+- `"field.general.importField"` - Button text
+- `"field.general.importField.tooltip"` - Tooltip text
+- `"versionCheck.error.noVersion"` - User-facing error message
+- `"actions.alignment.alignHorizontally"` - Action description
+
+## Usage in React Components (.tsx files)
+
+Import Tolgee hooks and components:
+
+```tsx
+import { T, useTolgee } from "@tolgee/react";
+```
+
+### Using the `<T>` Component (for JSX content)
+
+Use the `<T>` component to display translated text in JSX:
+
+```tsx
+export default function MyComponent() {
+    return (
+        <Button>
+            <T keyName="field.general.importField" />
+        </Button>
+    );
+}
+```
+
+### Using the `t()` Function (for dynamic strings)
+
+Use the `useTolgee()` hook to get the `t()` function for dynamic translations:
+
+```tsx
+export default function MyComponent() {
+    const { t } = useTolgee();
+
+    return (
+        <Button
+            tooltipText={t("field.general.importField.tooltip")}
+            onClick={() => alert(t("actions.file.saveDialogue"))}
+        >
+            <T keyName="field.general.importField" />
+        </Button>
+    );
+}
+```
+
+### Full Example from Codebase:
+
+```tsx
+import { Button } from "@openmarch/ui";
+import { T, useTolgee } from "@tolgee/react";
+
+export default function FieldIoButtons() {
+    const { t } = useTolgee();
+
+    return (
+        <div className="grid grid-cols-2 gap-8">
+            <Button
+                className="w-full"
+                tooltipText={t("field.general.importField.tooltip")}
+                variant="primary"
+                size="compact"
+                onClick={window.electron.importFieldPropertiesFile}
+            >
+                <T keyName="field.general.importField" />
+            </Button>
+            <Button
+                className="w-full"
+                tooltipText={t("field.general.exportField.tooltip")}
+                variant="secondary"
+                size="compact"
+                onClick={window.electron.exportFieldPropertiesFile}
+            >
+                <T keyName="field.general.exportField" />
+            </Button>
+        </div>
+    );
+}
+```
+
+### ICU Message Format (for plurals and variables)
+
+Tolgee supports ICU message format for dynamic values:
+
+```tsx
+// In en.json:
+{
+    "actions.batchEdit.setSelectedToNextSuccess": "{count, plural, one {Successfully set {count} marcher coordinate} other {Successfully set {count} marcher coordinates}}"
+}
+
+// In component:
+const { t } = useTolgee();
+const message = t("actions.batchEdit.setSelectedToNextSuccess", { count: selectedCount });
+```
+
+## Usage in Plain TypeScript Files (.ts files)
+
+For plain TypeScript files (utilities, classes, etc.), create a translation helper function that accepts the `t` function as a parameter:
+
+```ts
+/**
+ * Gets the translated name of a section.
+ *
+ * @param name The name of the section to get. E.g. "Bass Drum"
+ * @param t The translation function to use.
+ * @returns The translated name of the section.
+ */
+export function getTranslatedSectionName(
+    name: string,
+    t: (key: string) => string,
+): string {
+    const section = getSectionObjectByName(name);
+    return t(section.tName);
+}
+```
+
+Then call this function from your React component:
+
+```tsx
+import { getTranslatedSectionName } from "@/global/classes/Sections";
+import { useTolgee } from "@tolgee/react";
+
+export default function MyComponent() {
+    const { t } = useTolgee();
+    const sectionName = getTranslatedSectionName("Bass Drum", t);
+
+    return <div>{sectionName}</div>;
+}
+```
+
+### ❌ NEVER do this in plain .ts files:
+
+```ts
+// Don't import and use useTolgee in .ts files
+import { useTolgee } from "@tolgee/react"; // ❌ This is a React hook
+
+export function myUtility() {
+    const { t } = useTolgee(); // ❌ Hooks only work in React components
+    return t("some.key");
+}
+```
+
+## Adding New Translations
+
+### Step 1: Add ONLY English Translation First
+
+When adding new localizable text, **only add the English translation to `en.json`**:
+
+```json
+{
+    "myComponent": {
+        "newButton": "Click Me",
+        "newButtonTooltip": "This button does something cool"
+    }
+}
+```
+
+### Step 2: Stub Out Other Languages
+
+For other language files (`es.json`, `pt-BR.json`, `ja.json`), **add the same key with the English text as a placeholder** for future translation:
+
+**es.json:**
+
+```json
+{
+    "myComponent": {
+        "newButton": "Click Me",
+        "newButtonTooltip": "This button does something cool"
+    }
+}
+```
+
+**pt-BR.json:**
+
+```json
+{
+    "myComponent": {
+        "newButton": "Click Me",
+        "newButtonTooltip": "This button does something cool"
+    }
+}
+```
+
+**ja.json:**
+
+```json
+{
+    "myComponent": {
+        "newButton": "Click Me",
+        "newButtonTooltip": "This button does something cool"
+    }
+}
+```
+
+> **Note:** This ensures the app doesn't break in other languages while waiting for proper translations. Future translators can easily find these English placeholders and replace them with proper translations.
+
+## Error Handling Examples
+
+### ✅ Correct: User-facing errors are localized
+
+```tsx
+const { t } = useTolgee();
+
+try {
+    await fetchData();
+} catch (err) {
+    console.error("Failed to fetch latest version:", err); // ❌ Not localized - internal log
+    setError(t("versionCheck.error.fetchFailed")); // ✅ Localized - shown to user
+}
+```
+
+### ✅ Correct: Console logs are NOT localized
+
+```tsx
+try {
+    await tolgee.changeLanguage(languageCode);
+    await window.electron.setLanguage(languageCode);
+} catch (error) {
+    console.error("Failed to change language:", error); // ✅ Correct - debug log in English
+}
+```
+
+## Development Mode
+
+In development, Tolgee DevTools are enabled, allowing you to edit translations directly in the UI. The Tolgee singleton is configured in `apps/desktop/src/global/singletons/Tolgee.ts`.
+
+## Quick Reference
+
+| Context                   | Import                                      | Usage                                    |
+| ------------------------- | ------------------------------------------- | ---------------------------------------- |
+| React component (JSX)     | `import { T } from "@tolgee/react"`         | `<T keyName="my.key" />`                 |
+| React component (strings) | `import { useTolgee } from "@tolgee/react"` | `const { t } = useTolgee(); t("my.key")` |
+| Plain TypeScript          | N/A                                         | Pass `t` function as parameter           |
+| User errors               | Use `t()`                                   | `setError(t("error.key"))`               |
+| Debug logs                | N/A                                         | `console.error("English message")`       |
+
+# Localization Guidelines
+
+OpenMarch uses [Tolgee](https://tolgee.io/) for internationalization (i18n) and localization. All user-facing text must be localized to support multiple languages.
+
+## Translation Files
+
+Translation files are located in `apps/desktop/i18n/`:
+
+- `en.json` - English (primary language)
+- `es.json` - Spanish
+- `pt-BR.json` - Portuguese (Brazil)
+- `ja.json` - Japanese
+
+## What Needs to be Localized
+
+### ✅ MUST be localized:
+
+- Button text and labels
+- Dialog/modal titles and content
+- Popup messages and notifications
+- Tooltip text
+- Form labels and placeholders
+- User-facing error messages
+- Menu items
+- Status messages
+- Any text visible to the user in the UI
+
+### ❌ Does NOT need to be localized:
+
+- Console error logs (`console.error`, `console.warn`, `console.log`)
+- Debug messages
+- Developer-facing error messages in try/catch blocks
+- Internal error messages that are only logged
+
+## Translation Key Structure
+
+Use a hierarchical dot notation for translation keys:
+
+```json
+{
+    "componentName": {
+        "section": {
+            "action": "Text here",
+            "actionTooltip": "Tooltip text here"
+        }
+    }
+}
+```
+
+### Examples:
+
+- `"field.general.importField"` - Button text
+- `"field.general.importField.tooltip"` - Tooltip text
+- `"versionCheck.error.noVersion"` - User-facing error message
+- `"actions.alignment.alignHorizontally"` - Action description
+
+## Usage in React Components (.tsx files)
+
+Import Tolgee hooks and components:
+
+```tsx
+import { T, useTolgee } from "@tolgee/react";
+```
+
+### Using the `<T>` Component (for JSX content)
+
+Use the `<T>` component to display translated text in JSX:
+
+```tsx
+export default function MyComponent() {
+    return (
+        <Button>
+            <T keyName="field.general.importField" />
+        </Button>
+    );
+}
+```
+
+### Using the `t()` Function (for dynamic strings)
+
+Use the `useTolgee()` hook to get the `t()` function for dynamic translations:
+
+```tsx
+export default function MyComponent() {
+    const { t } = useTolgee();
+
+    return (
+        <Button
+            tooltipText={t("field.general.importField.tooltip")}
+            onClick={() => alert(t("actions.file.saveDialogue"))}
+        >
+            <T keyName="field.general.importField" />
+        </Button>
+    );
+}
+```
+
+### Full Example from Codebase
+
+```tsx
+import { Button } from "@openmarch/ui";
+import { T, useTolgee } from "@tolgee/react";
+
+export default function FieldIoButtons() {
+    const { t } = useTolgee();
+
+    return (
+        <div className="grid grid-cols-2 gap-8">
+            <Button
+                className="w-full"
+                tooltipText={t("field.general.importField.tooltip")}
+                variant="primary"
+                size="compact"
+                onClick={window.electron.importFieldPropertiesFile}
+            >
+                <T keyName="field.general.importField" />
+            </Button>
+            <Button
+                className="w-full"
+                tooltipText={t("field.general.exportField.tooltip")}
+                variant="secondary"
+                size="compact"
+                onClick={window.electron.exportFieldPropertiesFile}
+            >
+                <T keyName="field.general.exportField" />
+            </Button>
+        </div>
+    );
+}
+```
+
+### ICU Message Format (for plurals and variables)
+
+Tolgee supports ICU message format for dynamic values:
+
+```tsx
+// In en.json:
+{
+    "actions.batchEdit.setSelectedToNextSuccess": "{count, plural, one {Successfully set {count} marcher coordinate} other {Successfully set {count} marcher coordinates}}"
+}
+
+// In component:
+const { t } = useTolgee();
+const message = t("actions.batchEdit.setSelectedToNextSuccess", { count: selectedCount });
+```
+
+## Usage in Plain TypeScript Files (.ts files)
+
+For plain TypeScript files (utilities, classes, etc.), create a translation helper function that accepts the `t` function as a parameter:
+
+```ts
+/**
+ * Gets the translated name of a section.
+ *
+ * @param name The name of the section to get. E.g. "Bass Drum"
+ * @param t The translation function to use.
+ * @returns The translated name of the section.
+ */
+export function getTranslatedSectionName(
+    name: string,
+    t: (key: string) => string,
+): string {
+    const section = getSectionObjectByName(name);
+    return t(section.tName);
+}
+```
+
+Then call this function from your React component:
+
+```tsx
+import { getTranslatedSectionName } from "@/global/classes/Sections";
+import { useTolgee } from "@tolgee/react";
+
+export default function MyComponent() {
+    const { t } = useTolgee();
+    const sectionName = getTranslatedSectionName("Bass Drum", t);
+
+    return <div>{sectionName}</div>;
+}
+```
+
+### ❌ NEVER do this in plain .ts files:
+
+```ts
+// Don't import and use useTolgee in .ts files
+import { useTolgee } from "@tolgee/react"; // ❌ This is a React hook
+
+export function myUtility() {
+    const { t } = useTolgee(); // ❌ Hooks only work in React components
+    return t("some.key");
+}
+```
+
+## Adding New Translations
+
+### Step 1: Add ONLY English Translation First
+
+When adding new localizable text, **only add the English translation to `en.json`**:
+
+```json
+{
+    "myComponent": {
+        "newButton": "Click Me",
+        "newButtonTooltip": "This button does something cool"
+    }
+}
+```
+
+### Step 2: Stub Out Other Languages
+
+For other language files (`es.json`, `pt-BR.json`, `ja.json`), **add the same key with the English text as a placeholder** for future translation:
+
+**es.json:**
+
+```json
+{
+    "myComponent": {
+        "newButton": "Click Me",
+        "newButtonTooltip": "This button does something cool"
+    }
+}
+```
+
+**pt-BR.json:**
+
+```json
+{
+    "myComponent": {
+        "newButton": "Click Me",
+        "newButtonTooltip": "This button does something cool"
+    }
+}
+```
+
+**ja.json:**
+
+```json
+{
+    "myComponent": {
+        "newButton": "Click Me",
+        "newButtonTooltip": "This button does something cool"
+    }
+}
+```
+
+> **Note:** This ensures the app doesn't break in other languages while waiting for proper translations. Future translators can easily find these English placeholders and replace them with proper translations.
+
+## Error Handling Examples
+
+### ✅ Correct: User-facing errors are localized
+
+```tsx
+const { t } = useTolgee();
+
+try {
+    await fetchData();
+} catch (err) {
+    console.error("Failed to fetch latest version:", err); // ❌ Not localized - internal log
+    setError(t("versionCheck.error.fetchFailed")); // ✅ Localized - shown to user
+}
+```
+
+### ✅ Correct: Console logs are NOT localized
+
+```tsx
+try {
+    await tolgee.changeLanguage(languageCode);
+    await window.electron.setLanguage(languageCode);
+} catch (error) {
+    console.error("Failed to change language:", error); // ✅ Correct - debug log in English
+}
+```
+
+## Development Mode
+
+In development, Tolgee DevTools are enabled, allowing you to edit translations directly in the UI. The Tolgee singleton is configured in `apps/desktop/src/global/singletons/Tolgee.ts`.
+
+## Quick Reference
+
+| Context                   | Import                                      | Usage                                    |
+| ------------------------- | ------------------------------------------- | ---------------------------------------- |
+| React component (JSX)     | `import { T } from "@tolgee/react"`         | `<T keyName="my.key" />`                 |
+| React component (strings) | `import { useTolgee } from "@tolgee/react"` | `const { t } = useTolgee(); t("my.key")` |
+| Plain TypeScript          | N/A                                         | Pass `t` function as parameter           |
+| User errors               | Use `t()`                                   | `setError(t("error.key"))`               |
+| Debug logs                | N/A                                         | `console.error("English message")`       |

@@ -12,6 +12,8 @@ import type Beat from "../../../global/classes/Beat";
 import { measureIsSameTempo } from "../TempoGroup/TempoGroup";
 import { measureHasOneTempo } from "../TempoGroup/TempoGroup";
 import { NewBeatArgs } from "@/db-functions";
+import { faker } from "@faker-js/faker";
+import { SEED_AMOUNT, seedObj } from "@/test/base";
 
 describe("TempoGroupsFromMeasures", () => {
     // Helper function to create a mock beat
@@ -46,6 +48,7 @@ describe("TempoGroupsFromMeasures", () => {
         counts: beats.length,
         beats,
         timestamp: Math.random(),
+        isGhost: false,
     });
 
     it("should return empty array for empty input", () => {
@@ -572,6 +575,7 @@ describe("getStrongBeatIndexes", () => {
         counts: beats.length,
         beats,
         timestamp: Math.random(),
+        isGhost: false,
     });
     // Spy on console.error
     const consoleErrorSpy = vi
@@ -712,6 +716,7 @@ describe("measureIsMixedMeter", () => {
         counts: beats.length,
         beats,
         timestamp: Math.random(),
+        isGhost: false,
     });
     it("should return false for measure with single duration", () => {
         const measure = createMockMeasure({
@@ -825,6 +830,7 @@ describe("measureHasOneTempo", () => {
         counts: beats.length,
         beats,
         timestamp: Math.random(),
+        isGhost: false,
     });
 
     it("should return true for measure with all beats having same duration", () => {
@@ -919,6 +925,7 @@ describe("measureIsSameTempo", () => {
         counts: beats.length,
         beats,
         timestamp: Math.random(),
+        isGhost: false,
     });
 
     describe("Regular tempo measures", () => {
@@ -1196,93 +1203,104 @@ describe("measureIsSameTempo", () => {
     });
 });
 describe("newBeatsFromTempoGroup", () => {
-    it("should create beats with constant tempo when no ", () => {
-        const result = newBeatsFromTempoGroup({
-            tempo: 120,
-            numRepeats: 1,
-            bigBeatsPerMeasure: 4,
-        });
-        expect(result).toHaveLength(4); // 1 repeat * 4 beats
-        result.forEach((beat: NewBeatArgs) => {
-            expect(beat.duration).toBe(0.5); // 60/120 = 0.5
-            expect(beat.include_in_measure).toBe(true);
-        });
+    const fakeData = (seed?: number, endTempo: boolean = false) => {
+        faker.seed(seed);
+        const output = {
+            tempo: faker.helpers.arrayElement([
+                faker.number.int({ min: 32, max: 240 }),
+                faker.number.float({ min: 32, max: 240 }),
+            ]),
+            numRepeats: faker.number.int({ min: 1, max: 200 }),
+            bigBeatsPerMeasure: faker.number.int({ min: 1, max: 32 }),
+            ...(endTempo && {
+                endTempo: faker.number.int({ min: 32, max: 240 }),
+            }),
+        };
+        faker.seed();
+        return output;
+    };
+    describe("should create beats with constant tempo", () => {
+        it.for([
+            { tempo: 120, numRepeats: 1, bigBeatsPerMeasure: 4 },
+            { tempo: 120, numRepeats: 2, bigBeatsPerMeasure: 4 },
+            ...Array(SEED_AMOUNT)
+                .fill(0)
+                .map((_, i) => fakeData(i)),
+        ])(
+            "%# - {tempo: $tempo, numRepeats: $numRepeats, bigBeatsPerMeasure: $bigBeatsPerMeasure}",
+            (args) => {
+                const result = newBeatsFromTempoGroup(args);
+                const expectedTotalBeats =
+                    args.bigBeatsPerMeasure * args.numRepeats + 1;
+                expect(result).toHaveLength(expectedTotalBeats);
+                result.forEach((beat: NewBeatArgs, index: number) => {
+                    expect(beat.duration).toBe(60 / args.tempo);
+                    expect(beat.include_in_measure).toBe(true);
+                });
+            },
+        );
     });
 
-    it("should create beats with constant tempo when ", () => {
-        const result = newBeatsFromTempoGroup({
-            tempo: 120,
-            numRepeats: 1,
-            bigBeatsPerMeasure: 4,
-        });
-        expect(result).toHaveLength(4);
-        result.forEach((beat: NewBeatArgs) => {
-            expect(beat.duration).toBe(0.5); // 60/120 = 0.5
-            expect(beat.include_in_measure).toBe(true);
-        });
-    });
-
-    it("should create beats with changing tempo when ", () => {
+    it("should create beats with changing tempo with endTempo", () => {
         const result = newBeatsFromTempoGroup({
             tempo: 120,
             numRepeats: 1,
             bigBeatsPerMeasure: 4,
             endTempo: 80,
         });
-        expect(result).toHaveLength(4);
+        const expectedTotalBeats = 4 * 1 + 1;
+        expect(result).toHaveLength(expectedTotalBeats);
 
         const expectedDurations = [
             60 / 120, //
             60 / 110,
             60 / 100,
             60 / 90,
-        ].map((d) => Number(d.toFixed(6)));
+            60 / 80,
+        ].map((d) => Number(d.toFixed(8)));
 
         result.forEach((beat: NewBeatArgs, index: number) => {
-            expect(Number(beat.duration.toFixed(6))).toBe(
+            expect(Number(beat.duration.toFixed(8)), `index: ${index}`).toBe(
                 expectedDurations[index],
             );
             expect(beat.include_in_measure).toBe(true);
         });
     });
 
-    it("should handle multiple repeats with constant tempo", () => {
-        const result = newBeatsFromTempoGroup({
-            tempo: 120,
-            numRepeats: 3,
-            bigBeatsPerMeasure: 2,
-        });
-        expect(result).toHaveLength(6); // 3 repeats * 2 beats
-        result.forEach((beat: NewBeatArgs) => {
-            expect(beat.duration).toBe(0.5);
-            expect(beat.include_in_measure).toBe(true);
-        });
-    });
+    describe("should handle multiple repeats with changing tempo", () => {
+        it.for([
+            { tempo: 100, numRepeats: 2, bigBeatsPerMeasure: 3, endTempo: 70 },
+            ...Array.from({ length: SEED_AMOUNT }, (_, i) => fakeData(i, true)),
+        ])(
+            "%# - {tempo: $tempo, numRepeats: $numRepeats, bigBeatsPerMeasure: $bigBeatsPerMeasure, endTempo: $endTempo}",
+            (args) => {
+                const result = newBeatsFromTempoGroup(args);
+                const expectedTotalBeats =
+                    args.bigBeatsPerMeasure * args.numRepeats + 1;
+                expect(result).toHaveLength(expectedTotalBeats);
+                const tempoDelta =
+                    (args.tempo - args.endTempo!) / (expectedTotalBeats - 1);
+                const expectedTempos = Array.from(
+                    { length: expectedTotalBeats },
+                    (_, i) => args.tempo - tempoDelta * i,
+                );
 
-    it("should handle multiple repeats with changing tempo", () => {
-        const result = newBeatsFromTempoGroup({
-            tempo: 100,
-            numRepeats: 2,
-            bigBeatsPerMeasure: 3,
-            endTempo: 70,
-        });
-        expect(result).toHaveLength(6); // 2 repeats * 3 beats
-        const tempoDelta = (100 - 70) / 6;
-        const expectedTempos = Array.from(
-            { length: 6 },
-            (_, i) => 100 - tempoDelta * i,
+                const expectedDurations = [
+                    ...expectedTempos
+                        .map((tempo) => 60 / tempo)
+                        .map((d) => Number(d.toFixed(8))),
+                    60 / args.endTempo!,
+                ];
+
+                result.forEach((beat: NewBeatArgs, index: number) => {
+                    expect(
+                        Number(beat.duration.toFixed(8)),
+                        `index: ${index}`,
+                    ).toBe(expectedDurations[index]);
+                    expect(beat.include_in_measure).toBe(true);
+                });
+            },
         );
-
-        const expectedDurations = expectedTempos
-            .map((tempo) => 60 / tempo)
-            .map((d) => Number(d.toFixed(6)));
-
-        result.forEach((beat: NewBeatArgs, index: number) => {
-            expect(Number(beat.duration.toFixed(6))).toBe(
-                expectedDurations[index],
-            );
-            expect(beat.include_in_measure).toBe(true);
-        });
     });
 
     it("should handle edge case with single beat per measure", () => {
@@ -1291,8 +1309,9 @@ describe("newBeatsFromTempoGroup", () => {
             numRepeats: 1,
             bigBeatsPerMeasure: 1,
         });
-        expect(result).toHaveLength(1);
+        expect(result).toHaveLength(2);
         expect(result[0].duration).toBe(0.5);
+        expect(result[1].duration).toBe(0.5);
         expect(result[0].include_in_measure).toBe(true);
     });
 
@@ -1302,7 +1321,7 @@ describe("newBeatsFromTempoGroup", () => {
             numRepeats: 1,
             bigBeatsPerMeasure: 2,
         });
-        expect(result).toHaveLength(2);
+        expect(result).toHaveLength(3);
         result.forEach((beat: NewBeatArgs) => {
             expect(beat.duration).toBe(0.25); // 60/240 = 0.25
             expect(beat.include_in_measure).toBe(true);
@@ -1315,7 +1334,7 @@ describe("newBeatsFromTempoGroup", () => {
             numRepeats: 1,
             bigBeatsPerMeasure: 2,
         });
-        expect(result).toHaveLength(2);
+        expect(result).toHaveLength(3);
         result.forEach((beat: NewBeatArgs) => {
             expect(beat.duration).toBe(2); // 60/30 = 2
             expect(beat.include_in_measure).toBe(true);
@@ -1329,7 +1348,7 @@ describe("newBeatsFromTempoGroup", () => {
             bigBeatsPerMeasure: 3,
             endTempo: 120,
         });
-        expect(result).toHaveLength(3);
+        expect(result).toHaveLength(4);
 
         // With 3 beats going from 180 to 120, the tempo delta is -20
         // Since tempo changes AFTER each repeat (not each beat):
@@ -1338,59 +1357,149 @@ describe("newBeatsFromTempoGroup", () => {
             60 / 180, //
             60 / 160,
             60 / 140,
-        ].map((d) => Number(d.toFixed(6)));
+            60 / 120,
+        ].map((d) => Number(d.toFixed(8)));
 
         result.forEach((beat: NewBeatArgs, index: number) => {
-            expect(Number(beat.duration.toFixed(6))).toBe(
+            expect(Number(beat.duration.toFixed(8))).toBe(
                 expectedDurations[index],
             );
             expect(beat.include_in_measure).toBe(true);
         });
     });
-    it.each([
-        {
-            bigBeatsPerMeasure: 4,
-            strongBeatIndexes: [1],
-            expectedDurations: [0.5, 0.75, 0.5, 0.5],
-        },
-        {
-            bigBeatsPerMeasure: 4,
-            strongBeatIndexes: [1, 3],
-            expectedDurations: [0.5, 0.75, 0.5, 0.75],
-        },
-        {
-            bigBeatsPerMeasure: 3,
-            strongBeatIndexes: [0, 1],
-            expectedDurations: [0.75, 0.75, 0.5],
-        },
-    ])(
-        "should handle mixed meter",
-        ({ strongBeatIndexes, expectedDurations, bigBeatsPerMeasure }) => {
+
+    describe("mixed meter", () => {
+        it.each([
+            {
+                bigBeatsPerMeasure: 4,
+                strongBeatIndexes: [1],
+                expectedDurations: [0.5, 0.75, 0.5, 0.5],
+            },
+            {
+                bigBeatsPerMeasure: 4,
+                strongBeatIndexes: [1, 3],
+                expectedDurations: [0.5, 0.75, 0.5, 0.75],
+            },
+            {
+                bigBeatsPerMeasure: 3,
+                strongBeatIndexes: [0, 1],
+                expectedDurations: [0.75, 0.75, 0.5],
+            },
+        ])(
+            "should handle mixed meter",
+            ({ strongBeatIndexes, expectedDurations, bigBeatsPerMeasure }) => {
+                const result = newBeatsFromTempoGroup({
+                    tempo: 120,
+                    numRepeats: 1,
+                    bigBeatsPerMeasure,
+                    strongBeatIndexes,
+                });
+                expect(result).toHaveLength(bigBeatsPerMeasure + 1); // 1 repeat * 4 beats
+                result.forEach((beat: NewBeatArgs, index: number) => {
+                    expect(beat.duration, `index: ${index}`).toBe(
+                        expectedDurations[index] ??
+                            Math.min(...expectedDurations),
+                    );
+                    expect(beat.include_in_measure).toBe(true);
+                });
+            },
+        );
+
+        it("should handle mixed meter with two long beats", () => {
             const result = newBeatsFromTempoGroup({
                 tempo: 120,
                 numRepeats: 1,
-                bigBeatsPerMeasure,
-                strongBeatIndexes,
+                bigBeatsPerMeasure: 4,
+                strongBeatIndexes: [1],
             });
-            expect(result).toHaveLength(bigBeatsPerMeasure); // 1 repeat * 4 beats
+            expect(result).toHaveLength(5); // 1 repeat * 4 beats
+            const expectedDurations = [0.5, 0.75, 0.5, 0.5];
             result.forEach((beat: NewBeatArgs, index: number) => {
-                expect(beat.duration).toBe(expectedDurations[index]);
+                expect(beat.duration, `index: ${index}`).toBe(
+                    expectedDurations[index] ?? Math.min(...expectedDurations),
+                );
                 expect(beat.include_in_measure).toBe(true);
             });
-        },
-    );
-    it("should handle mixed meter with two long beats", () => {
-        const result = newBeatsFromTempoGroup({
-            tempo: 120,
-            numRepeats: 1,
-            bigBeatsPerMeasure: 4,
-            strongBeatIndexes: [1],
         });
-        expect(result).toHaveLength(4); // 1 repeat * 4 beats
-        const expectedDurations = [0.5, 0.75, 0.5, 0.5];
-        result.forEach((beat: NewBeatArgs, index: number) => {
-            expect(beat.duration).toBe(expectedDurations[index]);
-            expect(beat.include_in_measure).toBe(true);
+    });
+
+    describe("Seeded tests", () => {
+        const generate = (seed?: number) => {
+            faker.seed(seed);
+            const bigBeatsPerMeasure = faker.number.int({ min: 5, max: 35 });
+            const possibleStrongBeatIndexes = Array.from(
+                { length: bigBeatsPerMeasure },
+                (_, i) => i,
+            );
+            const strongBeatIndexes = faker.helpers.uniqueArray(
+                possibleStrongBeatIndexes,
+                faker.number.int({
+                    min: 0,
+                    max: possibleStrongBeatIndexes.length,
+                }),
+            );
+            const tempo = faker.number.int({ min: 32, max: 240 });
+            const numRepeats = faker.number.int({ min: 1, max: 200 });
+
+            const smallBeatDuration = 60 / tempo;
+            const strongBeatDuration = smallBeatDuration * 1.5;
+            const expectedMeasureDurations = Array(bigBeatsPerMeasure)
+                .fill(smallBeatDuration)
+                .map((duration, index) =>
+                    strongBeatIndexes.includes(index)
+                        ? strongBeatDuration
+                        : duration,
+                );
+
+            const output = {
+                bigBeatsPerMeasure,
+                numRepeats,
+                strongBeatIndexes,
+                tempo,
+                expectedMeasureDurations,
+                smallBeatDuration,
+                strongBeatDuration,
+            };
+            faker.seed();
+            return output;
+        };
+        it.for(seedObj)("%# - {seed: $seed}", (args) => {
+            const expectedValues = generate(args.seed);
+
+            const result = newBeatsFromTempoGroup({
+                tempo: expectedValues.tempo,
+                numRepeats: expectedValues.numRepeats,
+                bigBeatsPerMeasure: expectedValues.bigBeatsPerMeasure,
+                strongBeatIndexes: expectedValues.strongBeatIndexes,
+            });
+            expect(result).toHaveLength(
+                expectedValues.bigBeatsPerMeasure * expectedValues.numRepeats +
+                    1,
+            );
+
+            for (
+                let createdBeatIndex = 0;
+                createdBeatIndex < result.length;
+                createdBeatIndex++
+            ) {
+                const beatIndex =
+                    createdBeatIndex % expectedValues.bigBeatsPerMeasure;
+
+                if (
+                    expectedValues.strongBeatIndexes.includes(beatIndex) &&
+                    createdBeatIndex !== result.length - 1 // Last beat should always be a small beat
+                )
+                    expect(
+                        result[createdBeatIndex].duration,
+                        `createdBeatIndex: ${createdBeatIndex}`,
+                    ).toBe(expectedValues.strongBeatDuration);
+                else
+                    expect(
+                        result[createdBeatIndex].duration,
+                        `createdBeatIndex: ${createdBeatIndex}`,
+                    ).toBe(expectedValues.smallBeatDuration);
+                expect(result[createdBeatIndex].include_in_measure).toBe(true);
+            }
         });
     });
 });
@@ -1399,12 +1508,12 @@ describe("getNewMeasuresFromCreatedBeats", () => {
     // Helper function to create a mock beat
     const createMockBeat = (id: number): Beat => ({
         id,
-        position: Math.random(),
+        position: faker.number.int({ min: 1, max: 100 }),
         duration: 0.5,
         includeInMeasure: true,
         notes: null,
-        index: Math.random(),
-        timestamp: Math.random(),
+        index: faker.number.int({ min: 1, max: 100 }),
+        timestamp: faker.number.float({ min: 1, max: 100 }),
     });
 
     it("should create one measure for single repeat", () => {
@@ -1413,6 +1522,7 @@ describe("getNewMeasuresFromCreatedBeats", () => {
             createMockBeat(2),
             createMockBeat(3),
             createMockBeat(4),
+            createMockBeat(5),
         ];
 
         const result = getNewMeasuresFromCreatedBeats({
@@ -1421,9 +1531,13 @@ describe("getNewMeasuresFromCreatedBeats", () => {
             bigBeatsPerMeasure: 4,
         });
 
-        expect(result).toHaveLength(1);
+        expect(result).toHaveLength(2);
         expect(result[0]).toEqual({
             start_beat: 1,
+        });
+        expect(result[1]).toEqual({
+            start_beat: 5,
+            is_ghost: 1,
         });
     });
 
@@ -1437,6 +1551,7 @@ describe("getNewMeasuresFromCreatedBeats", () => {
             createMockBeat(6),
             createMockBeat(7),
             createMockBeat(8),
+            createMockBeat(9),
         ];
 
         const result = getNewMeasuresFromCreatedBeats({
@@ -1445,17 +1560,26 @@ describe("getNewMeasuresFromCreatedBeats", () => {
             bigBeatsPerMeasure: 4,
         });
 
-        expect(result).toHaveLength(2);
+        expect(result).toHaveLength(3);
         expect(result[0]).toEqual({
             start_beat: 1,
         });
         expect(result[1]).toEqual({
             start_beat: 5,
         });
+        expect(result[2]).toEqual({
+            start_beat: 9,
+            is_ghost: 1,
+        });
     });
 
     it("should handle single beat per measure", () => {
-        const beats = [createMockBeat(1), createMockBeat(2), createMockBeat(3)];
+        const beats = [
+            createMockBeat(1),
+            createMockBeat(2),
+            createMockBeat(3),
+            createMockBeat(4),
+        ];
 
         const result = getNewMeasuresFromCreatedBeats({
             createdBeats: beats,
@@ -1463,14 +1587,15 @@ describe("getNewMeasuresFromCreatedBeats", () => {
             bigBeatsPerMeasure: 1,
         });
 
-        expect(result).toHaveLength(3);
+        expect(result).toHaveLength(4);
         expect(result[0]).toEqual({ start_beat: 1 });
         expect(result[1]).toEqual({ start_beat: 2 });
         expect(result[2]).toEqual({ start_beat: 3 });
+        expect(result[3]).toEqual({ start_beat: 4, is_ghost: 1 });
     });
 
     it("should handle large number of beats per measure", () => {
-        const beats = Array.from({ length: 16 }, (_, i) =>
+        const beats = Array.from({ length: 17 }, (_, i) =>
             createMockBeat(i + 1),
         );
 
@@ -1480,13 +1605,14 @@ describe("getNewMeasuresFromCreatedBeats", () => {
             bigBeatsPerMeasure: 8,
         });
 
-        expect(result).toHaveLength(2);
+        expect(result).toHaveLength(3);
         expect(result[0]).toEqual({ start_beat: 1 });
         expect(result[1]).toEqual({ start_beat: 9 });
+        expect(result[2]).toEqual({ start_beat: 17, is_ghost: 1 });
     });
 
     it("should handle edge case with single repeat and single beat", () => {
-        const beats = [createMockBeat(1)];
+        const beats = [createMockBeat(1), createMockBeat(2)];
 
         const result = getNewMeasuresFromCreatedBeats({
             createdBeats: beats,
@@ -1494,8 +1620,45 @@ describe("getNewMeasuresFromCreatedBeats", () => {
             bigBeatsPerMeasure: 1,
         });
 
-        expect(result).toHaveLength(1);
+        expect(result).toHaveLength(2);
         expect(result[0]).toEqual({ start_beat: 1 });
+        expect(result[1]).toEqual({ start_beat: 2, is_ghost: 1 });
+    });
+
+    describe("Seeded tests", () => {
+        const generate = (seed?: number) => {
+            faker.seed(seed);
+            const bigBeatsPerMeasure = faker.number.int({ min: 1, max: 35 });
+            const numOfRepeats = faker.number.int({ min: 1, max: 200 });
+            const beats = Array.from(
+                { length: bigBeatsPerMeasure * numOfRepeats + 1 },
+                (_, i) => createMockBeat(i + 1),
+            );
+            faker.seed();
+            return { bigBeatsPerMeasure, numOfRepeats, beats };
+        };
+        it.for(seedObj)("%# - {seed: $seed}", (args) => {
+            const expectedValues = generate(args.seed);
+            const result = getNewMeasuresFromCreatedBeats({
+                createdBeats: expectedValues.beats,
+                numOfRepeats: expectedValues.numOfRepeats,
+                bigBeatsPerMeasure: expectedValues.bigBeatsPerMeasure,
+            });
+            expect(result).toHaveLength(expectedValues.numOfRepeats + 1);
+            for (let i = 0; i < result.length - 1; i++) {
+                expect(result[i]).toMatchObject({
+                    start_beat:
+                        expectedValues.beats[
+                            i * expectedValues.bigBeatsPerMeasure
+                        ].id,
+                });
+            }
+            expect(result[result.length - 1]).toMatchObject({
+                start_beat:
+                    expectedValues.beats[expectedValues.beats.length - 1].id,
+                is_ghost: 1,
+            });
+        });
     });
 });
 
@@ -1532,6 +1695,7 @@ describe("getLastBeatOfTempoGroup", () => {
         counts: beats.length,
         beats,
         timestamp: Math.random(),
+        isGhost: false,
     });
 
     it("should return undefined for tempo group with no measures", () => {

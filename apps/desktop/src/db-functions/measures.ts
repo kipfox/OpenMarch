@@ -4,74 +4,25 @@ import {
     DbTransaction,
     transactionWithHistory,
 } from "@/db-functions";
-import { schema } from "@/global/database/db";
+import { schema, SqliteBoolean } from "@/global/database/db";
 
 /** How a measure is represented in the database */
-export interface DatabaseMeasure {
-    id: number;
-    start_beat: number;
-    rehearsal_mark: string | null;
-    notes: string | null;
-    created_at: string;
-    updated_at: string;
-}
-
-// Only do this if it's needed to convert the real database values to something else
-// I.e. integer -> boolean in sqlite
-type RealDatabaseMeasure = typeof schema.measures.$inferSelect;
-
-export const realDatabaseMeasureToDatabaseMeasure = (
-    item: RealDatabaseMeasure,
-): DatabaseMeasure => {
-    return {
-        ...item,
-        // Add any necessary transformations
-    };
-};
+export type DatabaseMeasure = typeof schema.measures.$inferSelect;
 
 export interface NewMeasureArgs {
     start_beat: number;
     rehearsal_mark?: string | null;
     notes?: string | null;
+    is_ghost?: SqliteBoolean;
 }
-
-interface RealNewMeasureArgs {
-    start_beat: number;
-    rehearsal_mark?: string | null;
-    notes?: string | null;
-}
-
-const newMeasureArgsToRealNewMeasureArgs = (
-    args: NewMeasureArgs,
-): RealNewMeasureArgs => {
-    return {
-        ...args,
-        // Add any necessary transformations
-    };
-};
 
 export interface ModifiedMeasureArgs {
     id: number;
     start_beat?: number;
     rehearsal_mark?: string | null;
     notes?: string | null;
+    is_ghost?: SqliteBoolean;
 }
-
-interface RealModifiedMeasureArgs {
-    id: number;
-    start_beat?: number;
-    rehearsal_mark?: string | null;
-    notes?: string | null;
-}
-
-const modifiedMeasureArgsToRealModifiedMeasureArgs = (
-    args: ModifiedMeasureArgs,
-): RealModifiedMeasureArgs => {
-    return {
-        ...args,
-        // Add any necessary transformations
-    };
-};
 
 /**
  * Gets all measures from the database.
@@ -82,7 +33,7 @@ export async function getMeasures({
     db: DbConnection;
 }): Promise<DatabaseMeasure[]> {
     const result = await db.query.measures.findMany();
-    return result.map(realDatabaseMeasureToDatabaseMeasure);
+    return result;
 }
 
 /**
@@ -98,7 +49,7 @@ export async function getMeasureById({
     const result = await db.query.measures.findFirst({
         where: eq(schema.measures.id, id),
     });
-    return result ? realDatabaseMeasureToDatabaseMeasure(result) : undefined;
+    return result ? result : undefined;
 }
 
 /**
@@ -114,7 +65,7 @@ export async function getMeasuresByStartBeat({
     const result = await db.query.measures.findMany({
         where: eq(schema.measures.start_beat, startBeat),
     });
-    return result.map(realDatabaseMeasureToDatabaseMeasure);
+    return result;
 }
 
 /**
@@ -154,10 +105,10 @@ export const createMeasuresInTransaction = async ({
 }): Promise<DatabaseMeasure[]> => {
     const createdItems = await tx
         .insert(schema.measures)
-        .values(newItems.map(newMeasureArgsToRealNewMeasureArgs))
+        .values(newItems)
         .returning();
 
-    return createdItems.map(realDatabaseMeasureToDatabaseMeasure);
+    return createdItems;
 };
 
 /**
@@ -174,10 +125,11 @@ export async function updateMeasures({
         db,
         "updateMeasures",
         async (tx) => {
-            return await updateMeasuresInTransaction({
+            const result = await updateMeasuresInTransaction({
                 modifiedItems,
                 tx,
             });
+            return result;
         },
     );
     return transactionResult;
@@ -191,19 +143,15 @@ export const updateMeasuresInTransaction = async ({
     tx: DbTransaction;
 }): Promise<DatabaseMeasure[]> => {
     const updatedItems: DatabaseMeasure[] = [];
-    const realModifiedItems = modifiedItems.map(
-        modifiedMeasureArgsToRealModifiedMeasureArgs,
-    );
 
-    for (const modifiedItem of realModifiedItems) {
+    for (const modifiedItem of modifiedItems) {
         const { id, ...updateData } = modifiedItem;
         const updatedItem = await tx
             .update(schema.measures)
             .set(updateData)
             .where(eq(schema.measures.id, id))
-            .returning()
-            .get();
-        updatedItems.push(realDatabaseMeasureToDatabaseMeasure(updatedItem));
+            .returning();
+        updatedItems.push(updatedItem[0]);
     }
 
     return updatedItems;
@@ -246,7 +194,7 @@ export const deleteMeasuresInTransaction = async ({
         .where(inArray(schema.measures.id, Array.from(itemIds)))
         .returning();
 
-    return deletedItems.map(realDatabaseMeasureToDatabaseMeasure);
+    return deletedItems;
 };
 
 export const anyMeasuresExist = async ({

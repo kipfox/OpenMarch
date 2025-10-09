@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
-import Beat from "../Beat";
+import Beat, { fromDatabaseBeat } from "../Beat";
 import { DatabaseMeasure, fromDatabaseMeasures } from "../Measure";
+import { seedObj } from "@/test/base";
+import { faker } from "@faker-js/faker";
+import {
+    generateBeats,
+    generateDatabaseMeasure,
+    generateMeasures,
+} from "@/__mocks__/generators";
 
 describe("Measure", () => {
     describe("fromDatabaseMeasures", () => {
@@ -28,6 +35,7 @@ describe("Measure", () => {
                 start_beat: 1,
                 rehearsal_mark: "A",
                 notes: "First measure",
+                is_ghost: 0,
                 created_at: "2023-01-01",
                 updated_at: "2023-01-01",
             };
@@ -41,6 +49,7 @@ describe("Measure", () => {
             expect(result[0].id).toBe(1);
             expect(result[0].rehearsalMark).toBe("A");
             expect(result[0].notes).toBe("First measure");
+            expect(result[0].isGhost).toBe(false);
             expect(result[0].beats).toHaveLength(1);
             expect(result[0].beats[0]).toBe(beat);
             expect(result[0].duration).toBe(1000); // From mocked beatsDuration
@@ -92,6 +101,7 @@ describe("Measure", () => {
                     start_beat: 1,
                     rehearsal_mark: "A",
                     notes: "First measure",
+                    is_ghost: 0,
                     created_at: "2023-01-01",
                     updated_at: "2023-01-01",
                 },
@@ -100,6 +110,7 @@ describe("Measure", () => {
                     start_beat: 3,
                     rehearsal_mark: "B",
                     notes: "Second measure",
+                    is_ghost: 0,
                     created_at: "2023-01-01",
                     updated_at: "2023-01-01",
                 },
@@ -147,6 +158,7 @@ describe("Measure", () => {
                     start_beat: 1,
                     rehearsal_mark: null,
                     notes: null,
+                    is_ghost: 0,
                     created_at: "2023-01-01",
                     updated_at: "2023-01-01",
                 },
@@ -209,6 +221,7 @@ describe("Measure", () => {
                     start_beat: 3, // This should come second
                     rehearsal_mark: "B",
                     notes: "Second measure",
+                    is_ghost: 0,
                     created_at: "2023-01-01",
                     updated_at: "2023-01-01",
                 },
@@ -217,6 +230,7 @@ describe("Measure", () => {
                     start_beat: 1, // This should come first
                     rehearsal_mark: "A",
                     notes: "First measure",
+                    is_ghost: 0,
                     created_at: "2023-01-01",
                     updated_at: "2023-01-01",
                 },
@@ -280,6 +294,7 @@ describe("Measure", () => {
                     start_beat: 1, // First measure starts at beat 1
                     rehearsal_mark: null,
                     notes: null,
+                    is_ghost: 0,
                     created_at: "2023-01-01",
                     updated_at: "2023-01-01",
                 },
@@ -288,6 +303,7 @@ describe("Measure", () => {
                     start_beat: 3, // Second measure starts at beat 3
                     rehearsal_mark: null,
                     notes: null,
+                    is_ghost: 0,
                     created_at: "2023-01-01",
                     updated_at: "2023-01-01",
                 },
@@ -309,6 +325,110 @@ describe("Measure", () => {
             expect(result[1].beats).toHaveLength(2);
             expect(result[1].beats[0].id).toBe(3);
             expect(result[1].beats[1].id).toBe(4);
+        });
+
+        it("should correctly convert is_ghost field to boolean", () => {
+            const beats = [
+                {
+                    position: 1,
+                    id: 1,
+                    duration: 0,
+                    includeInMeasure: true,
+                    notes: null,
+                    index: 0,
+                    timestamp: 0,
+                } satisfies Beat,
+                {
+                    position: 2,
+                    id: 2,
+                    duration: 100,
+                    includeInMeasure: true,
+                    notes: null,
+                    index: 1,
+                    timestamp: 100,
+                } satisfies Beat,
+            ];
+
+            const databaseMeasures: DatabaseMeasure[] = [
+                {
+                    id: 1,
+                    start_beat: 1,
+                    rehearsal_mark: "A",
+                    notes: "Normal measure",
+                    is_ghost: 0,
+                    created_at: "2023-01-01",
+                    updated_at: "2023-01-01",
+                },
+                {
+                    id: 2,
+                    start_beat: 2,
+                    rehearsal_mark: "B",
+                    notes: "Ghost measure",
+                    is_ghost: 0,
+                    created_at: "2023-01-01",
+                    updated_at: "2023-01-01",
+                },
+            ];
+
+            const result = fromDatabaseMeasures({
+                databaseMeasures,
+                allBeats: beats,
+            });
+
+            expect(result.length).toBe(2);
+            expect(result[0].isGhost).toBe(false);
+            expect(result[1].isGhost).toBe(false);
+        });
+
+        describe("Seeded tests", () => {
+            it.for(seedObj)("%# - {seed: $seed}", (args) => {
+                faker.seed(args.seed);
+                const numberOfBeats = faker.number.int({ min: 1, max: 2000 });
+                const generatedBeats = generateBeats(numberOfBeats);
+                const beatObjects = generatedBeats.map((b, i) =>
+                    fromDatabaseBeat(b, i),
+                );
+                const databaseMeasures = generateMeasures(generatedBeats, 0.2);
+                const result = fromDatabaseMeasures({
+                    databaseMeasures,
+                    allBeats: beatObjects,
+                });
+                let expectedMeasureNumber = 1;
+
+                for (const measure of result) {
+                    if (measure.isGhost) {
+                        expect(measure.number).toBeNull();
+                    } else {
+                        expect(measure.number).toBe(expectedMeasureNumber);
+                        expectedMeasureNumber++;
+                    }
+                    const databaseMeasure = databaseMeasures.find(
+                        (m) => m.id === measure.id,
+                    );
+                    expect(databaseMeasure).toBeDefined();
+                    expect(measure.isGhost).toBe(
+                        databaseMeasure?.is_ghost === 1,
+                    );
+                    expect(measure.startBeat.id).toBe(
+                        databaseMeasure?.start_beat,
+                    );
+                    expect(measure.rehearsalMark).toBe(
+                        databaseMeasure?.rehearsal_mark,
+                    );
+                    expect(measure.notes).toBe(databaseMeasure?.notes);
+
+                    const beats = measure.beats;
+                    for (const beat of beats)
+                        expect(beat.includeInMeasure).toBeTruthy();
+                    const expectedDuration = beats.reduce(
+                        (acc, beat) => acc + beat.duration,
+                        0,
+                    );
+                    expect(measure.duration).toBe(expectedDuration);
+                    expect(measure.counts).toBe(beats.length);
+                    expect(measure.timestamp).toBe(beats[0].timestamp);
+                }
+            });
         });
     });
 });

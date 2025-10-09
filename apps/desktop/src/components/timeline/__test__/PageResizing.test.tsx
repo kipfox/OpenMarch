@@ -199,10 +199,10 @@ describe.todo("PageTimeline Resizing", () => {
             </Providers>,
         );
         // Check if the pages are rendered
-        expect(screen.getByText("0")).toBeInTheDocument();
-        expect(screen.getByText("1")).toBeInTheDocument();
-        expect(screen.getByText("2")).toBeInTheDocument();
-        expect(screen.getByText("3")).toBeInTheDocument();
+        expect(screen.getByText("0")).toBeTruthy();
+        expect(screen.getByText("1")).toBeTruthy();
+        expect(screen.getByText("2")).toBeTruthy();
+        expect(screen.getByText("3")).toBeTruthy();
     });
 
     it("starts page resizing when mouse down on resize handle", async () => {
@@ -219,9 +219,10 @@ describe.todo("PageTimeline Resizing", () => {
         // Simulate mouse down on the resize handle
         fireEvent.mouseDown(resizeHandles[0], { clientX: 100 });
 
-        // Verify that the resize event listeners are added
-        // This is hard to test directly, but we can check if the element gets the right class
-        expect(resizeHandles[0]).toHaveClass("cursor-ew-resize");
+        // Verify that the resize handle still has the correct class after mousedown
+        expect(resizeHandles[0].classList.contains("cursor-ew-resize")).toBe(
+            true,
+        );
     });
 
     it("updates page width during resize movement", async () => {
@@ -306,6 +307,8 @@ describe.todo("PageTimeline Resizing", () => {
 
         // Verify that the resize event listeners are not added
         // This is hard to test directly, but we can check if the element gets the right class
-        expect(resizeHandles[0]).toHaveClass("cursor-ew-resize");
+        expect(resizeHandles[0].classList.contains("cursor-ew-resize")).toBe(
+            true,
+        );
     });
 });

@@ -20,13 +20,11 @@ import {
 
 const { measures } = schema;
 
-interface Measure {
+interface BaseMeasure {
     /** ID of the measure in the database */
     readonly id: number;
     /** The beat this measure starts on */
     readonly startBeat: Beat;
-    /** The measure's number in the piece */
-    readonly number: number;
     /** Optional rehearsal mark for the measure */
     readonly rehearsalMark: string | null;
     /** Human readable notes about the measure */
@@ -40,6 +38,20 @@ interface Measure {
     /** The timestamp of the first beat in the measure */
     readonly timestamp: number;
 }
+type GhostMeasure = BaseMeasure & {
+    /** A ghost measure is just a marker to show that the beats/counts are not part of the real music */
+    readonly isGhost: true;
+    /** The measure's number in the piece */
+    readonly number: null;
+};
+type RealMeasure = BaseMeasure & {
+    /** A ghost measure is just a marker to show that the beats/counts are not part of the real music */
+    readonly isGhost?: false;
+    /** The measure's number in the piece */
+    readonly number: number;
+};
+export type Measure = GhostMeasure | RealMeasure;
+// Default export for backwards compatibility
 export default Measure;
 
 // Database types and interfaces
@@ -103,16 +115,28 @@ export const fromDatabaseMeasures = (args: {
         const beats = nextBeat
             ? sortedBeats.slice(startBeat.index, nextBeat.index)
             : sortedBeats.slice(startBeat.index);
-        const output = {
-            ...measure,
+        const baseOutput = {
+            id: measure.id,
+            notes: measure.notes,
             startBeat: startBeat,
             beats,
-            number: currentMeasureNumber++,
             rehearsalMark: measure.rehearsal_mark,
             duration: beatsDuration(beats),
             counts: beats.length,
             timestamp: startBeat.timestamp,
-        } satisfies Measure;
+        } satisfies BaseMeasure;
+        const isGhost = measure.is_ghost === 1;
+        const output: Measure = isGhost
+            ? {
+                  ...baseOutput,
+                  isGhost,
+                  number: null,
+              }
+            : {
+                  ...baseOutput,
+                  isGhost,
+                  number: currentMeasureNumber++,
+              };
         return output;
     });
     return createdMeasures;

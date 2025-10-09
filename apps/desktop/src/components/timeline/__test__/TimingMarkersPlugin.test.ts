@@ -46,6 +46,7 @@ describe("TimingMarkersPlugin", () => {
             counts: 4,
             beats: [mockBeats[0], mockBeats[1]],
             timestamp: 0,
+            isGhost: false,
         },
         {
             id: 2,
@@ -57,6 +58,7 @@ describe("TimingMarkersPlugin", () => {
             counts: 4,
             beats: [mockBeats[2]],
             timestamp: 2.5,
+            isGhost: false,
         },
     ];
 
@@ -137,7 +139,8 @@ describe("TimingMarkersPlugin", () => {
                 expect(mockWsRegions.addRegion).toHaveBeenCalledWith({
                     id: `${measure.rehearsalMark ? "rehearsalMark" : "measure"} measure-${measure.id}`,
                     start: curTimestamp,
-                    content: measure.rehearsalMark ?? measure.number.toString(),
+                    content:
+                        measure.rehearsalMark ?? measure.number?.toString(),
                     drag: false,
                     resize: false,
                 });
@@ -303,6 +306,7 @@ describe("TimingMarkersPlugin", () => {
                     counts: 2,
                     beats: [newBeats[0]],
                     timestamp: 0,
+                    isGhost: false,
                 },
             ];
 

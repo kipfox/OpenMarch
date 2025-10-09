@@ -123,6 +123,8 @@ export const measureRangeString = (page: Page): string => {
         const firstMeasure = page.measures[0];
         const lastMeasure = page.measures[page.measures.length - 1];
 
+        if (firstMeasure.isGhost || lastMeasure.isGhost) return "-";
+
         // If the page starts on the first measure, just return the measure number. Otherwise, return the measure number and the beat.
         const firstMeasureString =
             page.measureBeatToStartOn === 1
@@ -253,7 +255,9 @@ export function fromDatabasePages({
     });
     const isSubsetArr = sortedDbPages.map((page) => page.is_subset);
     const pageNames = generatePageNames(isSubsetArr);
-    const sortedMeasures = allMeasures.sort((a, b) => a.number - b.number);
+    const sortedMeasures = allMeasures.sort(
+        (a, b) => a.beats[0].position - b.beats[0].position,
+    );
 
     let curTimestamp = 0;
     const createdPages: Page[] = sortedDbPages.map((dbPage, i) => {

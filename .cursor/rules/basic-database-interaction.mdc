@@ -24,65 +24,26 @@ import {
     DbTransaction,
     transactionWithHistory,
 } from "@/db-functions";
-import { schema } from "@/global/database/db";
+import { schema, SqliteBoolean } from "@/global/database/db";
 
 const { table_name } = schema;
 
 /** How a table item is represented in the database */
-export interface Database{tableName} {
-    id: number;
-    // Define other fields based on schema
-}
+// This is almost always good enough
+export type Database{tableName} = typeof schema.{tableName}.$inferSelect;
 
-// Only do this if it's needed to convert the real database values to something else
-// I.e. integer -> boolean in sqlite
-type RealDatabase{tableName} = typeof schema.table_name.$inferSelect;
-
-export const realDatabase{tableName}ToDatabase{tableName} = (
-    item: RealDatabase{tableName},
-): Database{tableName} => {
-    return {
-        ...item,
-        // Add any necessary transformations
-    };
-};
-
+//
 export interface New{tableName}Args {
-    // Define required fields
+    // Define required and optional fields
+    name: string, // Required
+    age?: number // Not required
 }
 
-interface RealNew{tableName}Args {
-    // Define fields as they appear in database (e.g., boolean as 0|1)
-}
-
-const new{tableName}ArgsToRealNew{tableName}Args = (
-    args: New{tableName}Args,
-): RealNew{tableName}Args => {
-    return {
-        ...args,
-        // Add any necessary transformations
-    };
-};
-
-
+// Always provide the ID for updating
 export interface Modified{tableName}Args {
     id: number;
     // Define optional fields
 }
-
-interface RealModified{tableName}Args {
-    id: number;
-    // Define fields as they appear in database
-}
-
-const modified{tableName}ArgsToRealModified{tableName}Args = (
-    args: Modified{tableName}Args,
-): RealModified{tableName}Args => {
-    return {
-        ...args,
-        // Add any necessary transformations
-    };
-};
 
 /**
  * Gets all items from the database.
@@ -93,7 +54,7 @@ export async function get{tableName}s({
     db: DbConnection;
 }): Promise<Database{tableName}[]> {
     const result = await db.query.table_name.findMany();
-    return result.map(realDatabase{tableName}ToDatabase{tableName});
+    return result;
 }
 
 /**
@@ -109,9 +70,7 @@ export async function get{tableName}ById({
     const result = await db.query.table_name.findFirst({
         where: eq(schema.table_name.id, id),
     });
-    return result
-        ? realDatabase{tableName}ToDatabase{tableName}(result)
-        : undefined;
+    return result;
 }
 
 /**
@@ -154,7 +113,7 @@ const create{tableName}sInTransaction = async ({
         .values(newItems.map(new{tableName}ArgsToRealNew{tableName}Args))
         .returning();
 
-    return createdItems.map(realDatabase{tableName}ToDatabase{tableName});
+    return createdItems;
 };
 
 /**
@@ -245,7 +204,7 @@ const delete{tableName}sInTransaction = async ({
         .where(inArray(schema.table_name.id, Array.from(itemIds)))
         .returning();
 
-    return deletedItems.map(realDatabase{tableName}ToDatabase{tableName});
+    return deletedItems;
 };
 ```
 

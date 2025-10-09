@@ -76,21 +76,27 @@ export const beats = sqliteTable(
     ],
 );
 
-export const measures = sqliteTable("measures", {
-    id: integer().primaryKey(),
-    start_beat: integer()
-        .notNull()
-        .references(() => beats.id),
-    rehearsal_mark: text(),
-    notes: text(),
-    created_at: text()
-        .default(sql`(CURRENT_TIMESTAMP)`)
-        .notNull(),
-    updated_at: text()
-        .default(sql`(CURRENT_TIMESTAMP)`)
-        .notNull()
-        .$onUpdate(() => sql`(CURRENT_TIMESTAMP)`),
-});
+export const measures = sqliteTable(
+    "measures",
+    {
+        id: integer().primaryKey(),
+        start_beat: integer()
+            .notNull()
+            .references(() => beats.id),
+        rehearsal_mark: text(),
+        notes: text(),
+        /** A ghost measure denotes that the beats/counts are not part of the real music */
+        is_ghost: integer().default(0).notNull(),
+        created_at: text()
+            .default(sql`(CURRENT_TIMESTAMP)`)
+            .notNull(),
+        updated_at: text()
+            .default(sql`(CURRENT_TIMESTAMP)`)
+            .notNull()
+            .$onUpdate(() => sql`(CURRENT_TIMESTAMP)`),
+    },
+    (_table) => [check("measures_is_ghost_check", sql`is_ghost IN (0, 1)`)],
+);
 
 export const pages = sqliteTable(
     "pages",

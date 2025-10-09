@@ -156,6 +156,7 @@ describeDbTests("measures", (it) => {
                         expectedMeasure.rehearsal_mark,
                     );
                     expect(createdMeasure.notes).toBe(expectedMeasure.notes);
+                    expect(createdMeasure.is_ghost).toBeDefined();
                     expect(createdMeasure.created_at).toBeDefined();
                     expect(createdMeasure.updated_at).toBeDefined();
                 }
@@ -327,6 +328,7 @@ describeDbTests("measures", (it) => {
             expect(measure.start_beat).toBe(expectedMeasure.start_beat);
             expect(measure.rehearsal_mark).toBe(expectedMeasure.rehearsal_mark);
             expect(measure.notes).toBe(expectedMeasure.notes);
+            expect(measure.is_ghost).toBeDefined();
         }
     });
 

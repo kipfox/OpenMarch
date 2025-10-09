@@ -311,6 +311,9 @@ export const getStrongBeatIndexesFromPattern = (pattern: string): number[] => {
  * E.e. 4 beats for 120 -> 80:
  * [120, 110, 100, 90]
  * This sets up the next beat to be 80. If you disagree with this, lmk
+ *
+ * It will also create a +1 beat at the end to attach a ghost measure.
+ * This will be at the endTempo if provided, otherwise it will be at the startTempo.
  */
 export const newBeatsFromTempoGroup = ({
     tempo,
@@ -354,6 +357,11 @@ export const newBeatsFromTempoGroup = ({
             }
         }
     }
+
+    beats.push({
+        duration: 60 / (endTempo ?? tempo),
+        include_in_measure: true,
+    });
     return beats;
 };
 /**
@@ -390,6 +398,11 @@ export const getNewMeasuresFromCreatedBeats = ({
             rehearsal_mark: i === 0 ? rehearsalMark : undefined,
         });
     }
+    newMeasures.push({
+        start_beat: createdBeats[createdBeats.length - 1].id,
+
+        is_ghost: 1,
+    });
     return newMeasures;
 };
 

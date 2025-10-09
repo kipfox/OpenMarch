@@ -73,7 +73,9 @@ export class TimingMarkersPlugin {
             const newRegion = this.wsRegions.addRegion({
                 id: `${hasRehearsalMark ? "rehearsalMark" : "measure"} measure-${measure.id}`,
                 start: measure.timestamp,
-                content: measure.rehearsalMark ?? measure.number.toString(),
+                content:
+                    measure.rehearsalMark ??
+                    (measure.isGhost ? undefined : measure.number.toString()),
                 drag: false,
                 resize: false,
             });

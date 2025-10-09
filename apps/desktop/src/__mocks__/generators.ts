@@ -62,9 +62,8 @@ export const generateMarchers = ({
 };
 
 // Helper function to generate beats
-const generateBeats = (numberOfBeats: number): DatabaseBeat[] => {
+export const generateBeats = (numberOfBeats: number): DatabaseBeat[] => {
     const beats: DatabaseBeat[] = [];
-    const commonDurations = [0.5, 0.75, 1.0, 1.25, 1.5];
 
     // Always create beat 0 with duration 0
     beats.push({
@@ -78,7 +77,11 @@ const generateBeats = (numberOfBeats: number): DatabaseBeat[] => {
     });
 
     // Always create beat 1 with a random duration
-    const beat1Duration = faker.helpers.arrayElement(commonDurations);
+    const beat1Duration = faker.number.float({
+        min: 0.001,
+        max: 5,
+        fractionDigits: 4,
+    });
     beats.push({
         id: 1,
         duration: beat1Duration,
@@ -93,7 +96,11 @@ const generateBeats = (numberOfBeats: number): DatabaseBeat[] => {
 
     // Generate remaining beats starting from ID 2
     for (let i = 2; i < numberOfBeats; i++) {
-        const duration = faker.helpers.arrayElement(commonDurations);
+        const duration = faker.number.float({
+            min: 0.001,
+            max: 5,
+            fractionDigits: 4,
+        });
         const notes = faker.helpers.arrayElement([faker.lorem.word(), null]) as
             | string
             | null;
@@ -112,33 +119,44 @@ const generateBeats = (numberOfBeats: number): DatabaseBeat[] => {
     return beats;
 };
 
+/**
+ * Generates random database measures.
+ *
+ * Note, does not take in beats.
+ */
+export const generateDatabaseMeasure = (
+    override: Partial<DatabaseMeasure> = {},
+): DatabaseMeasure => {
+    const measure: DatabaseMeasure = {
+        id: faker.number.int({ min: 1, max: 1000000 }),
+        start_beat: faker.number.int({ min: 1, max: 1000000 }),
+        rehearsal_mark: faker.helpers.arrayElement([
+            faker.lorem.word(),
+            faker.string.alpha(),
+            faker.lorem.sentence(),
+            null,
+        ]),
+        notes: faker.helpers.arrayElement([faker.lorem.sentence(), null]),
+        created_at: faker.date.recent().toISOString(),
+        updated_at: faker.date.recent().toISOString(),
+        is_ghost: faker.datatype.boolean({ probability: 0.5 }) ? 1 : 0,
+    };
+    return { ...measure, ...override };
+};
+
 // Helper function to generate measures randomly placed among beats
-const generateMeasures = (beats: DatabaseBeat[]): DatabaseMeasure[] => {
+export const generateMeasures = (
+    beats: DatabaseBeat[],
+    ghostProbability: number = 0,
+): DatabaseMeasure[] => {
     const measures: DatabaseMeasure[] = [];
-    const rehearsalMarks = [
-        "A",
-        "B",
-        "C",
-        "D",
-        "E",
-        "F",
-        "G",
-        "H",
-        "1",
-        "2",
-        "3",
-        "4",
-        "5",
-        "6",
-        "7",
-        "8",
-        "Intro",
-        "Verse",
-        "Chorus",
-        "Bridge",
-        "Outro",
+    const rehearsalMark = faker.helpers.arrayElement([
+        faker.string.alpha(),
+        faker.lorem.sentence(),
+        faker.number.int({ min: 1, max: 100 }).toString(),
+        faker.string.alphanumeric(),
         null,
-    ];
+    ]);
 
     // Randomly decide how many measures to create (0 to about 1/4 of beats)
     const maxMeasures = Math.max(1, Math.floor(beats.length / 4));
@@ -158,7 +176,6 @@ const generateMeasures = (beats: DatabaseBeat[]): DatabaseMeasure[] => {
         const startBeat = faker.helpers.arrayElement(availableBeats);
         usedBeatIds.add(startBeat.id);
 
-        const rehearsalMark = faker.helpers.arrayElement(rehearsalMarks);
         const measureNotes = faker.helpers.arrayElement([
             faker.lorem.sentence(),
             null,
@@ -171,6 +188,9 @@ const generateMeasures = (beats: DatabaseBeat[]): DatabaseMeasure[] => {
             notes: measureNotes,
             created_at: faker.date.recent().toISOString(),
             updated_at: faker.date.recent().toISOString(),
+            is_ghost: faker.datatype.boolean({ probability: ghostProbability })
+                ? 0
+                : 1,
         });
 
         currentMeasureId++;
