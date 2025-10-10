@@ -22,7 +22,7 @@ import { measureKeys } from "@/hooks/queries/useMeasures";
 import { beatKeys } from "@/hooks/queries";
 import { conToastError } from "@/utilities/utils";
 
-export type TempoGroup = {
+type BaseTempoGroup = {
     /**
      * Denotes the first measure's rehearsal mark, or a default name if there is no rehearsal mark.
      *
@@ -52,6 +52,8 @@ export type TempoGroup = {
      * If the group is not a mixed meter, this is undefined.
      */
     strongBeatIndexes?: number[];
+};
+export type TempoGroup = BaseTempoGroup & {
     /**
      * The number of times the group is repeated.
      */
@@ -67,6 +69,15 @@ export type TempoGroup = {
      * The measures in this group.
      */
     measures?: Measure[];
+};
+
+/**
+ * A tempo group made up of a single ghost measure
+ */
+export type GhostTempoGroup = BaseTempoGroup & {
+    numOfRepeats: 1;
+    measureRangeString: null;
+    measures: Measure;
 };
 
 const aboutEqual = (a: number, b: number, epsilon = 0.00001): boolean => {
@@ -451,6 +462,24 @@ export const useCreateFromTempoGroup = (callback?: () => void) => {
     );
 };
 
+export const useCreateWithoutMeasuresTempo = (callback?: () => void) => {
+    return useTempoGroupMutation(
+        _createWithoutMeasuresTempo,
+        "tempoGroup.createNewBeatsError",
+        "music.tempoGroupCreated",
+        callback,
+    );
+};
+
+export const useCreateWithoutMeasuresSeconds = (callback?: () => void) => {
+    return useTempoGroupMutation(
+        _createWithoutMeasuresSeconds,
+        "tempoGroup.createNewBeatsError",
+        "music.tempoGroupCreated",
+        callback,
+    );
+};
+
 /**
  * Creates new beats and measures in the database from a tempo group
  */
@@ -494,6 +523,111 @@ export const _createFromTempoGroup = async ({
             tx,
             newItems: newMeasures,
         });
+    });
+};
+
+/**
+ * Creates beats and a measure with the first beat of the created beats.
+ *
+ * @param newBeats - The beats to create.
+ * @param startingPosition - The starting position of the beats.
+ * @param name - The name of the measure, optional.
+ */
+export const _createBeatsWithOneMeasure = async ({
+    newBeats,
+    startingPosition,
+    name,
+    isGhostMeasure = true,
+}: {
+    newBeats: NewBeatArgs[];
+    startingPosition: number;
+    name?: string;
+    isGhostMeasure?: boolean;
+}) => {
+    await transactionWithHistory(
+        db,
+        "createBeatsWithOneMeasure",
+        async (tx) => {
+            const createdBeats = await createBeatsInTransaction({
+                tx,
+                newBeats,
+                startingPosition,
+            });
+            const firstCreatedBeat = createdBeats.reduce((prev, curr) =>
+                curr.position < prev.position ? curr : prev,
+            );
+            const newMeasure = {
+                start_beat: firstCreatedBeat.id,
+                rehearsal_mark: name,
+                is_ghost: isGhostMeasure ? 1 : 0,
+            };
+            await createMeasuresInTransaction({
+                tx,
+                newItems: [newMeasure],
+            });
+        },
+    );
+};
+
+/**
+ * Creates beats and a measure that will total to the given duration.
+ *
+ * @param startingPosition - The starting position of the beats.
+ * @param numberOfBeats - The number of beats to create. The total duration is the same regardless, but the duration of each beat will be `totalDurationSeconds / numberOfBeats`.
+ * @param name - The name of the measure, optional.
+ * @param totalDurationSeconds - The total duration of the beats.
+ */
+export const _createWithoutMeasuresSeconds = async ({
+    startingPosition,
+    numberOfBeats,
+    name,
+    totalDurationSeconds,
+}: {
+    startingPosition: number;
+    numberOfBeats: number;
+    name?: string;
+    totalDurationSeconds: number;
+}) => {
+    const beats: NewBeatArgs[] = [];
+    const duration = totalDurationSeconds / numberOfBeats;
+    for (let i = 0; i < numberOfBeats; i++) {
+        beats.push({ duration, include_in_measure: true });
+    }
+    await _createBeatsWithOneMeasure({
+        newBeats: beats,
+        startingPosition,
+        name,
+    });
+};
+
+/**
+ * Creates a variable number of beats at a given tempo.
+ *
+ * @param startingPosition - The starting position of the beats.
+ * @param totalNumberOfBeats - The number of beats to create. The total duration will be the tempo times the number of beats.
+ * @param tempoBpm - The tempo in BPM. Applies to all beats
+ * @param name - The name of the measure, optional.
+ */
+export const _createWithoutMeasuresTempo = async ({
+    startingPosition,
+    totalNumberOfBeats,
+    tempoBpm,
+    name,
+}: {
+    startingPosition: number;
+    totalNumberOfBeats: number;
+    tempoBpm: number;
+    name?: string;
+}) => {
+    const beats: NewBeatArgs[] = [];
+    const duration = 60 / tempoBpm;
+    for (let i = 0; i < totalNumberOfBeats; i++) {
+        beats.push({ duration, include_in_measure: true });
+    }
+    await _createBeatsWithOneMeasure({
+        newBeats: beats,
+        startingPosition,
+        name,
     });
 };
 
