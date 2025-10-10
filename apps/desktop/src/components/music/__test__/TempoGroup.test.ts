@@ -22,533 +22,679 @@ import { getMeasures } from "@/db-functions/measures";
 import { getTestWithHistory } from "@/test/history";
 
 describe("TempoGroupsFromMeasures", () => {
-    // Helper function to create a mock beat
-    const createMockBeat = (duration: number): Beat => ({
-        id: Math.random(),
-        position: Math.random(),
-        duration,
-        includeInMeasure: true,
-        notes: null,
-        index: Math.random(),
-        timestamp: Math.random(),
-    });
-
-    // Helper function to create a mock measure
-    const createMockMeasure = ({
-        beats,
-        rehearsalMark = null,
-        number = 1,
-        id = Math.random(),
-    }: {
-        beats: Beat[];
-        rehearsalMark?: string | null;
-        number?: number;
-        id?: number;
-    }): Measure => ({
-        id,
-        startBeat: beats[0],
-        number,
-        rehearsalMark,
-        notes: null,
-        duration: beats.reduce((sum, beat) => sum + beat.duration, 0),
-        counts: beats.length,
-        beats,
-        timestamp: Math.random(),
-        isGhost: false,
-    });
-
-    it("should return empty array for empty input", () => {
-        expect(TempoGroupsFromMeasures([])).toEqual([]);
-    });
-
-    it("should create single group for measures with same tempo and beats", () => {
-        const measures = [
-            createMockMeasure({
-                beats: [createMockBeat(0.5), createMockBeat(0.5)],
-                rehearsalMark: "A",
-                number: 1,
-                id: 1,
-            }),
-            createMockMeasure({
-                beats: [createMockBeat(0.5), createMockBeat(0.5)],
-                number: 2,
-                id: 2,
-            }),
-        ];
-
-        const result = TempoGroupsFromMeasures(measures);
-
-        expect(result).toHaveLength(1);
-        expect(result[0]).toEqual({
-            name: "A",
-            tempo: 120, // 60/0.5
-            bigBeatsPerMeasure: 2,
-            numOfRepeats: 2,
-            strongBeatIndexes: undefined,
-            measureRangeString: "m 1-2",
-            measures: measures,
+    describe("real tempo groups", () => {
+        // Helper function to create a mock beat
+        const createMockBeat = (duration: number): Beat => ({
+            id: Math.random(),
+            position: Math.random(),
+            duration,
+            includeInMeasure: true,
+            notes: null,
+            index: Math.random(),
+            timestamp: Math.random(),
         });
-    });
 
-    it("should create new group when rehearsal mark is present", () => {
-        const measures = [
-            createMockMeasure({
-                beats: [createMockBeat(0.5), createMockBeat(0.5)],
-                number: 1,
-                id: 1,
-            }),
-            createMockMeasure({
-                beats: [createMockBeat(0.5), createMockBeat(0.5)],
-                rehearsalMark: "A",
-                number: 2,
-                id: 2,
-            }),
-        ];
-
-        const result = TempoGroupsFromMeasures(measures);
-
-        expect(result).toHaveLength(2);
-        expect(result[0]).toEqual({
-            name: "",
-            tempo: 120,
-            bigBeatsPerMeasure: 2,
-            numOfRepeats: 1,
-            strongBeatIndexes: undefined,
-            measureRangeString: "m 1",
-            measures: [measures[0]],
+        // Helper function to create a mock measure
+        const createMockMeasure = ({
+            beats,
+            rehearsalMark = null,
+            number = 1,
+            id = Math.random(),
+        }: {
+            beats: Beat[];
+            rehearsalMark?: string | null;
+            number?: number;
+            id?: number;
+        }): Measure => ({
+            id,
+            startBeat: beats[0],
+            number,
+            rehearsalMark,
+            notes: null,
+            duration: beats.reduce((sum, beat) => sum + beat.duration, 0),
+            counts: beats.length,
+            beats,
+            timestamp: Math.random(),
+            isGhost: false,
         });
-        expect(result[1]).toEqual({
-            name: "A",
-            tempo: 120,
-            bigBeatsPerMeasure: 2,
-            numOfRepeats: 1,
-            strongBeatIndexes: undefined,
-            measureRangeString: "m 2",
-            measures: [measures[1]],
+
+        it("should return empty array for empty input", () => {
+            expect(TempoGroupsFromMeasures([])).toEqual([]);
         });
-    });
 
-    it("should create new group when number of beats changes", () => {
-        const measures = [
-            createMockMeasure({
-                beats: [createMockBeat(0.5), createMockBeat(0.5)],
-                number: 1,
-                id: 1,
-            }),
-            createMockMeasure({
-                beats: [
-                    createMockBeat(0.5),
-                    createMockBeat(0.5),
-                    createMockBeat(0.5),
-                ],
-                number: 2,
-                id: 2,
-            }),
-        ];
+        it("should create single group for measures with same tempo and beats", () => {
+            const measures = [
+                createMockMeasure({
+                    beats: [createMockBeat(0.5), createMockBeat(0.5)],
+                    rehearsalMark: "A",
+                    number: 1,
+                    id: 1,
+                }),
+                createMockMeasure({
+                    beats: [createMockBeat(0.5), createMockBeat(0.5)],
+                    number: 2,
+                    id: 2,
+                }),
+            ];
 
-        const result = TempoGroupsFromMeasures(measures);
+            const result = TempoGroupsFromMeasures(measures);
 
-        expect(result).toHaveLength(2);
-        expect(result[0]).toEqual({
-            name: "",
-            tempo: 120,
-            bigBeatsPerMeasure: 2,
-            numOfRepeats: 1,
-            strongBeatIndexes: undefined,
-            measureRangeString: "m 1",
-            measures: [measures[0]],
-        });
-        expect(result[1]).toEqual({
-            name: "",
-            tempo: 120,
-            bigBeatsPerMeasure: 3,
-            numOfRepeats: 1,
-            strongBeatIndexes: undefined,
-            measureRangeString: "m 2",
-            measures: [measures[1]],
-        });
-    });
-
-    it("should create new group when tempo changes between measures", () => {
-        const measures = [
-            createMockMeasure({
-                beats: [createMockBeat(0.5), createMockBeat(0.5)],
-                number: 1,
-                id: 1,
-            }),
-            createMockMeasure({
-                beats: [createMockBeat(0.4), createMockBeat(0.4)],
-                number: 2,
-                id: 2,
-            }),
-        ];
-
-        const result = TempoGroupsFromMeasures(measures);
-
-        expect(result).toHaveLength(2);
-        expect(result[0]).toEqual({
-            name: "",
-            tempo: 120,
-            bigBeatsPerMeasure: 2,
-            numOfRepeats: 1,
-            strongBeatIndexes: undefined,
-            measureRangeString: "m 1",
-            measures: [measures[0]],
-        });
-        expect(result[1]).toEqual({
-            name: "",
-            tempo: 150, // 60/0.4
-            bigBeatsPerMeasure: 2,
-            numOfRepeats: 1,
-            strongBeatIndexes: undefined,
-            measureRangeString: "m 2",
-            measures: [measures[1]],
-        });
-    });
-
-    it("should handle accelerando within a measure", () => {
-        const measures = [
-            createMockMeasure({
-                beats: [createMockBeat(0.5), createMockBeat(0.5)],
-                number: 1,
-                id: 1,
-            }),
-            createMockMeasure({
-                beats: [createMockBeat(0.5), createMockBeat(0.4)],
-                number: 2,
-                id: 2,
-            }),
-        ];
-
-        const result = TempoGroupsFromMeasures(measures);
-
-        expect(result).toHaveLength(2);
-        expect(result[0]).toEqual({
-            name: "",
-            tempo: 120,
-            bigBeatsPerMeasure: 2,
-            numOfRepeats: 1,
-            strongBeatIndexes: undefined,
-            measureRangeString: "m 1",
-            measures: [measures[0]],
-        });
-        expect(result[1]).toEqual({
-            name: "",
-            tempo: 120,
-            bigBeatsPerMeasure: 2,
-            numOfRepeats: 1,
-            strongBeatIndexes: undefined,
-            manualTempos: [120, 150],
-            measureRangeString: "m 2",
-            measures: [measures[1]],
-        });
-    });
-
-    it("should handle ritardando within a measure", () => {
-        const measures = [
-            createMockMeasure({
-                beats: [createMockBeat(0.5), createMockBeat(0.6)],
-                number: 1,
-                id: 1,
-            }),
-        ];
-
-        const result = TempoGroupsFromMeasures(measures);
-
-        expect(result).toHaveLength(1);
-        expect(result[0]).toEqual({
-            name: "",
-            tempo: 120,
-            manualTempos: [120, 100],
-            bigBeatsPerMeasure: 2,
-            numOfRepeats: 1,
-            strongBeatIndexes: undefined,
-            measureRangeString: "m 1",
-            measures: [measures[0]],
-        });
-    });
-
-    it("should handle multiple tempo changes and rehearsal marks", () => {
-        const measures = [
-            createMockMeasure({
-                beats: [createMockBeat(0.5), createMockBeat(0.5)],
-                number: 1,
-                id: 1,
-            }),
-            createMockMeasure({
-                beats: [createMockBeat(0.4), createMockBeat(0.4)],
-                rehearsalMark: "A",
-                number: 2,
-                id: 2,
-            }),
-            createMockMeasure({
-                beats: [createMockBeat(0.4), createMockBeat(0.4)],
-                number: 3,
-                id: 3,
-            }),
-            createMockMeasure({
-                beats: [createMockBeat(0.4), createMockBeat(0.3)],
-                number: 4,
-                id: 4,
-            }),
-            createMockMeasure({
-                beats: [createMockBeat(0.3), createMockBeat(0.3)],
-                rehearsalMark: "B",
-                number: 5,
-                id: 5,
-            }),
-            createMockMeasure({
-                beats: [createMockBeat(0.3), createMockBeat(0.3)],
-                number: 6,
-                id: 6,
-            }),
-            createMockMeasure({
-                beats: [createMockBeat(0.3), createMockBeat(0.3)],
-                number: 7,
-                id: 7,
-            }),
-        ];
-
-        const result = TempoGroupsFromMeasures(measures);
-
-        expect(result).toHaveLength(4);
-        expect(result[0]).toEqual({
-            name: "",
-            tempo: 120,
-            bigBeatsPerMeasure: 2,
-            numOfRepeats: 1,
-            strongBeatIndexes: undefined,
-            measureRangeString: "m 1",
-            measures: [measures[0]],
-        });
-        expect(result[1]).toEqual({
-            name: "A",
-            tempo: 150,
-            bigBeatsPerMeasure: 2,
-            numOfRepeats: 2,
-            strongBeatIndexes: undefined,
-            measureRangeString: "m 2-3",
-            measures: [measures[1], measures[2]],
-        });
-        expect(result[2]).toEqual({
-            name: "",
-            tempo: 150,
-            manualTempos: [150, 200],
-            bigBeatsPerMeasure: 2,
-            numOfRepeats: 1,
-            strongBeatIndexes: undefined,
-            measureRangeString: "m 4",
-            measures: [measures[3]],
-        });
-        expect(result[3]).toEqual({
-            name: "B",
-            tempo: 200,
-            bigBeatsPerMeasure: 2,
-            numOfRepeats: 3,
-            strongBeatIndexes: undefined,
-            measureRangeString: "m 5-7",
-            measures: [measures[4], measures[5], measures[6]],
-        });
-    });
-
-    it("should handle gradual tempo changes across multiple beats", () => {
-        const measures = [
-            createMockMeasure({
-                beats: [
-                    createMockBeat(0.6),
-                    createMockBeat(0.45),
-                    createMockBeat(0.36),
-                ],
-                number: 1,
-            }),
-            createMockMeasure({
-                beats: [
-                    createMockBeat(0.3),
-                    createMockBeat(0.3),
-                    createMockBeat(0.3),
-                ],
-                number: 2,
-            }),
-        ];
-
-        const result = TempoGroupsFromMeasures(measures);
-
-        expect(result).toHaveLength(2);
-        expect(result[0]).toMatchObject({
-            name: "",
-            tempo: 100,
-            manualTempos: [100, 133.33, 166.67].map(
-                (t) => Math.round(t * 100) / 100,
-            ),
-            bigBeatsPerMeasure: 3,
-            numOfRepeats: 1,
-            strongBeatIndexes: undefined,
-            measureRangeString: "m 1",
-            measures: [measures[0]],
-        });
-        expect(result[1]).toMatchObject({
-            name: "",
-            tempo: 200,
-            bigBeatsPerMeasure: 3,
-            numOfRepeats: 1,
-            strongBeatIndexes: undefined,
-            measureRangeString: "m 2",
-            measures: [measures[1]],
-        });
-    });
-
-    it("should handle gradual tempo changes across multiple beats", () => {
-        const measures = [
-            createMockMeasure({
-                beats: [
-                    createMockBeat(0.375), // 160 BPM
-                    createMockBeat(0.4), // 150 BPM
-                    createMockBeat(0.429), // 140 BPM
-                ],
-                number: 1,
-            }),
-            createMockMeasure({
-                beats: [
-                    createMockBeat(0.5), // 120 BPM
-                    createMockBeat(0.5),
-                    createMockBeat(0.5),
-                ],
-                number: 2,
-            }),
-            createMockMeasure({
-                beats: [
-                    createMockBeat(0.6), // 100 BPM
-                    createMockBeat(0.6),
-                    createMockBeat(0.6),
-                ],
-                number: 3,
-            }),
-            createMockMeasure({
-                beats: [
-                    createMockBeat(0.75), // 80 BPM
-                    createMockBeat(0.75),
-                    createMockBeat(0.75),
-                ],
-                number: 4,
-            }),
-        ];
-
-        const result = TempoGroupsFromMeasures(measures);
-
-        expect(result).toHaveLength(4);
-        expect(result[0]).toMatchObject({
-            name: "",
-            tempo: 160,
-            manualTempos: [160, 150, 139.86],
-            bigBeatsPerMeasure: 3,
-            numOfRepeats: 1,
-            strongBeatIndexes: undefined,
-            measureRangeString: "m 1",
-            measures: [measures[0]],
-        });
-        expect(result[1]).toMatchObject({
-            name: "",
-            tempo: 120,
-            bigBeatsPerMeasure: 3,
-            numOfRepeats: 1,
-            strongBeatIndexes: undefined,
-            measureRangeString: "m 2",
-            measures: [measures[1]],
-        });
-        expect(result[2]).toMatchObject({
-            name: "",
-            tempo: 100,
-            bigBeatsPerMeasure: 3,
-            numOfRepeats: 1,
-            strongBeatIndexes: undefined,
-            measureRangeString: "m 3",
-            measures: [measures[2]],
-        });
-        expect(result[3]).toMatchObject({
-            name: "",
-            tempo: 80,
-            bigBeatsPerMeasure: 3,
-            numOfRepeats: 1,
-            strongBeatIndexes: undefined,
-            measureRangeString: "m 4",
-            measures: [measures[3]],
-        });
-    });
-
-    const beatArraysToMockMeasures = (durations: number[][]) => {
-        return durations.map((durations, i) => {
-            return createMockMeasure({
-                beats: durations.map((duration) => createMockBeat(duration)),
-                number: i + 1,
-                id: i + 1,
+            expect(result).toHaveLength(1);
+            expect(result[0]).toEqual({
+                type: "real",
+                name: "A",
+                tempo: 120, // 60/0.5
+                bigBeatsPerMeasure: 2,
+                numOfRepeats: 2,
+                strongBeatIndexes: undefined,
+                measureRangeString: "m 1-2",
+                measures: measures,
             });
         });
-    };
 
-    it.each([
-        {
-            durations: [
-                [0.75, 0.75, 0.5],
-                [0.75, 0.75, 0.5],
-                [0.5, 0.5, 0.75],
-                [0.5, 0.5, 0.75],
-            ],
-            expected: [
-                {
-                    name: "",
-                    tempo: 120,
-                    bigBeatsPerMeasure: 3,
-                    numOfRepeats: 2,
-                    strongBeatIndexes: [0, 1],
-                    measureRangeString: "m 1-2",
-                    measures: (measures: Measure[]) => [
-                        measures[0],
-                        measures[1],
+        it("should create new group when rehearsal mark is present", () => {
+            const measures = [
+                createMockMeasure({
+                    beats: [createMockBeat(0.5), createMockBeat(0.5)],
+                    number: 1,
+                    id: 1,
+                }),
+                createMockMeasure({
+                    beats: [createMockBeat(0.5), createMockBeat(0.5)],
+                    rehearsalMark: "A",
+                    number: 2,
+                    id: 2,
+                }),
+            ];
+
+            const result = TempoGroupsFromMeasures(measures);
+
+            expect(result).toHaveLength(2);
+            expect(result[0]).toEqual({
+                type: "real",
+                name: "",
+                tempo: 120,
+                bigBeatsPerMeasure: 2,
+                numOfRepeats: 1,
+                strongBeatIndexes: undefined,
+                measureRangeString: "m 1",
+                measures: [measures[0]],
+            });
+            expect(result[1]).toEqual({
+                type: "real",
+                name: "A",
+                tempo: 120,
+                bigBeatsPerMeasure: 2,
+                numOfRepeats: 1,
+                strongBeatIndexes: undefined,
+                measureRangeString: "m 2",
+                measures: [measures[1]],
+            });
+        });
+
+        it("should create new group when number of beats changes", () => {
+            const measures = [
+                createMockMeasure({
+                    beats: [createMockBeat(0.5), createMockBeat(0.5)],
+                    number: 1,
+                    id: 1,
+                }),
+                createMockMeasure({
+                    beats: [
+                        createMockBeat(0.5),
+                        createMockBeat(0.5),
+                        createMockBeat(0.5),
                     ],
+                    number: 2,
+                    id: 2,
+                }),
+            ];
+
+            const result = TempoGroupsFromMeasures(measures);
+
+            expect(result).toHaveLength(2);
+            expect(result[0]).toEqual({
+                type: "real",
+                name: "",
+                tempo: 120,
+                bigBeatsPerMeasure: 2,
+                numOfRepeats: 1,
+                strongBeatIndexes: undefined,
+                measureRangeString: "m 1",
+                measures: [measures[0]],
+            });
+            expect(result[1]).toEqual({
+                type: "real",
+                name: "",
+                tempo: 120,
+                bigBeatsPerMeasure: 3,
+                numOfRepeats: 1,
+                strongBeatIndexes: undefined,
+                measureRangeString: "m 2",
+                measures: [measures[1]],
+            });
+        });
+
+        it("should create new group when tempo changes between measures", () => {
+            const measures = [
+                createMockMeasure({
+                    beats: [createMockBeat(0.5), createMockBeat(0.5)],
+                    number: 1,
+                    id: 1,
+                }),
+                createMockMeasure({
+                    beats: [createMockBeat(0.4), createMockBeat(0.4)],
+                    number: 2,
+                    id: 2,
+                }),
+            ];
+
+            const result = TempoGroupsFromMeasures(measures);
+
+            expect(result).toHaveLength(2);
+            expect(result[0]).toEqual({
+                type: "real",
+                name: "",
+                tempo: 120,
+                bigBeatsPerMeasure: 2,
+                numOfRepeats: 1,
+                strongBeatIndexes: undefined,
+                measureRangeString: "m 1",
+                measures: [measures[0]],
+            });
+            expect(result[1]).toEqual({
+                type: "real",
+                name: "",
+                tempo: 150, // 60/0.4
+                bigBeatsPerMeasure: 2,
+                numOfRepeats: 1,
+                strongBeatIndexes: undefined,
+                measureRangeString: "m 2",
+                measures: [measures[1]],
+            });
+        });
+
+        it("should handle accelerando within a measure", () => {
+            const measures = [
+                createMockMeasure({
+                    beats: [createMockBeat(0.5), createMockBeat(0.5)],
+                    number: 1,
+                    id: 1,
+                }),
+                createMockMeasure({
+                    beats: [createMockBeat(0.5), createMockBeat(0.4)],
+                    number: 2,
+                    id: 2,
+                }),
+            ];
+
+            const result = TempoGroupsFromMeasures(measures);
+
+            expect(result).toHaveLength(2);
+            expect(result[0]).toEqual({
+                type: "real",
+                name: "",
+                tempo: 120,
+                bigBeatsPerMeasure: 2,
+                numOfRepeats: 1,
+                strongBeatIndexes: undefined,
+                measureRangeString: "m 1",
+                measures: [measures[0]],
+            });
+            expect(result[1]).toEqual({
+                type: "real",
+                name: "",
+                tempo: 120,
+                bigBeatsPerMeasure: 2,
+                numOfRepeats: 1,
+                strongBeatIndexes: undefined,
+                manualTempos: [120, 150],
+                measureRangeString: "m 2",
+                measures: [measures[1]],
+            });
+        });
+
+        it("should handle ritardando within a measure", () => {
+            const measures = [
+                createMockMeasure({
+                    beats: [createMockBeat(0.5), createMockBeat(0.6)],
+                    number: 1,
+                    id: 1,
+                }),
+            ];
+
+            const result = TempoGroupsFromMeasures(measures);
+
+            expect(result).toHaveLength(1);
+            expect(result[0]).toEqual({
+                type: "real",
+                name: "",
+                tempo: 120,
+                manualTempos: [120, 100],
+                bigBeatsPerMeasure: 2,
+                numOfRepeats: 1,
+                strongBeatIndexes: undefined,
+                measureRangeString: "m 1",
+                measures: [measures[0]],
+            });
+        });
+
+        it("should handle multiple tempo changes and rehearsal marks", () => {
+            const measures = [
+                createMockMeasure({
+                    beats: [createMockBeat(0.5), createMockBeat(0.5)],
+                    number: 1,
+                    id: 1,
+                }),
+                createMockMeasure({
+                    beats: [createMockBeat(0.4), createMockBeat(0.4)],
+                    rehearsalMark: "A",
+                    number: 2,
+                    id: 2,
+                }),
+                createMockMeasure({
+                    beats: [createMockBeat(0.4), createMockBeat(0.4)],
+                    number: 3,
+                    id: 3,
+                }),
+                createMockMeasure({
+                    beats: [createMockBeat(0.4), createMockBeat(0.3)],
+                    number: 4,
+                    id: 4,
+                }),
+                createMockMeasure({
+                    beats: [createMockBeat(0.3), createMockBeat(0.3)],
+                    rehearsalMark: "B",
+                    number: 5,
+                    id: 5,
+                }),
+                createMockMeasure({
+                    beats: [createMockBeat(0.3), createMockBeat(0.3)],
+                    number: 6,
+                    id: 6,
+                }),
+                createMockMeasure({
+                    beats: [createMockBeat(0.3), createMockBeat(0.3)],
+                    number: 7,
+                    id: 7,
+                }),
+            ];
+
+            const result = TempoGroupsFromMeasures(measures);
+
+            expect(result).toHaveLength(4);
+            expect(result[0]).toEqual({
+                type: "real",
+                name: "",
+                tempo: 120,
+                bigBeatsPerMeasure: 2,
+                numOfRepeats: 1,
+                strongBeatIndexes: undefined,
+                measureRangeString: "m 1",
+                measures: [measures[0]],
+            });
+            expect(result[1]).toEqual({
+                type: "real",
+                name: "A",
+                tempo: 150,
+                bigBeatsPerMeasure: 2,
+                numOfRepeats: 2,
+                strongBeatIndexes: undefined,
+                measureRangeString: "m 2-3",
+                measures: [measures[1], measures[2]],
+            });
+            expect(result[2]).toEqual({
+                type: "real",
+                name: "",
+                tempo: 150,
+                manualTempos: [150, 200],
+                bigBeatsPerMeasure: 2,
+                numOfRepeats: 1,
+                strongBeatIndexes: undefined,
+                measureRangeString: "m 4",
+                measures: [measures[3]],
+            });
+            expect(result[3]).toEqual({
+                type: "real",
+                name: "B",
+                tempo: 200,
+                bigBeatsPerMeasure: 2,
+                numOfRepeats: 3,
+                strongBeatIndexes: undefined,
+                measureRangeString: "m 5-7",
+                measures: [measures[4], measures[5], measures[6]],
+            });
+        });
+
+        it("should handle gradual tempo changes across multiple beats", () => {
+            const measures = [
+                createMockMeasure({
+                    beats: [
+                        createMockBeat(0.6),
+                        createMockBeat(0.45),
+                        createMockBeat(0.36),
+                    ],
+                    number: 1,
+                }),
+                createMockMeasure({
+                    beats: [
+                        createMockBeat(0.3),
+                        createMockBeat(0.3),
+                        createMockBeat(0.3),
+                    ],
+                    number: 2,
+                }),
+            ];
+
+            const result = TempoGroupsFromMeasures(measures);
+
+            expect(result).toHaveLength(2);
+            expect(result[0]).toMatchObject({
+                type: "real",
+                name: "",
+                tempo: 100,
+                manualTempos: [100, 133.33, 166.67].map(
+                    (t) => Math.round(t * 100) / 100,
+                ),
+                bigBeatsPerMeasure: 3,
+                numOfRepeats: 1,
+                strongBeatIndexes: undefined,
+                measureRangeString: "m 1",
+                measures: [measures[0]],
+            });
+            expect(result[1]).toMatchObject({
+                type: "real",
+                name: "",
+                tempo: 200,
+                bigBeatsPerMeasure: 3,
+                numOfRepeats: 1,
+                strongBeatIndexes: undefined,
+                measureRangeString: "m 2",
+                measures: [measures[1]],
+            });
+        });
+
+        it("should handle gradual tempo changes across multiple beats", () => {
+            const measures = [
+                createMockMeasure({
+                    beats: [
+                        createMockBeat(0.375), // 160 BPM
+                        createMockBeat(0.4), // 150 BPM
+                        createMockBeat(0.429), // 140 BPM
+                    ],
+                    number: 1,
+                }),
+                createMockMeasure({
+                    beats: [
+                        createMockBeat(0.5), // 120 BPM
+                        createMockBeat(0.5),
+                        createMockBeat(0.5),
+                    ],
+                    number: 2,
+                }),
+                createMockMeasure({
+                    beats: [
+                        createMockBeat(0.6), // 100 BPM
+                        createMockBeat(0.6),
+                        createMockBeat(0.6),
+                    ],
+                    number: 3,
+                }),
+                createMockMeasure({
+                    beats: [
+                        createMockBeat(0.75), // 80 BPM
+                        createMockBeat(0.75),
+                        createMockBeat(0.75),
+                    ],
+                    number: 4,
+                }),
+            ];
+
+            const result = TempoGroupsFromMeasures(measures);
+
+            expect(result).toHaveLength(4);
+            expect(result[0]).toMatchObject({
+                type: "real",
+                name: "",
+                tempo: 160,
+                manualTempos: [160, 150, 139.86],
+                bigBeatsPerMeasure: 3,
+                numOfRepeats: 1,
+                strongBeatIndexes: undefined,
+                measureRangeString: "m 1",
+                measures: [measures[0]],
+            });
+            expect(result[1]).toMatchObject({
+                type: "real",
+                name: "",
+                tempo: 120,
+                bigBeatsPerMeasure: 3,
+                numOfRepeats: 1,
+                strongBeatIndexes: undefined,
+                measureRangeString: "m 2",
+                measures: [measures[1]],
+            });
+            expect(result[2]).toMatchObject({
+                type: "real",
+                name: "",
+                tempo: 100,
+                bigBeatsPerMeasure: 3,
+                numOfRepeats: 1,
+                strongBeatIndexes: undefined,
+                measureRangeString: "m 3",
+                measures: [measures[2]],
+            });
+            expect(result[3]).toMatchObject({
+                type: "real",
+                name: "",
+                tempo: 80,
+                bigBeatsPerMeasure: 3,
+                numOfRepeats: 1,
+                strongBeatIndexes: undefined,
+                measureRangeString: "m 4",
+                measures: [measures[3]],
+            });
+        });
+
+        const beatArraysToMockMeasures = (durations: number[][]) => {
+            return durations.map((durations, i) => {
+                return createMockMeasure({
+                    beats: durations.map((duration) =>
+                        createMockBeat(duration),
+                    ),
+                    number: i + 1,
+                    id: i + 1,
+                });
+            });
+        };
+
+        it.each([
+            {
+                durations: [
+                    [0.75, 0.75, 0.5],
+                    [0.75, 0.75, 0.5],
+                    [0.5, 0.5, 0.75],
+                    [0.5, 0.5, 0.75],
+                ],
+                expected: [
+                    {
+                        type: "real",
+                        name: "",
+                        tempo: 120,
+                        bigBeatsPerMeasure: 3,
+                        numOfRepeats: 2,
+                        strongBeatIndexes: [0, 1],
+                        measureRangeString: "m 1-2",
+                        measures: (measures: Measure[]) => [
+                            measures[0],
+                            measures[1],
+                        ],
+                    },
+                    {
+                        type: "real",
+                        name: "",
+                        tempo: 120,
+                        bigBeatsPerMeasure: 3,
+                        numOfRepeats: 2,
+                        strongBeatIndexes: [2],
+                        measureRangeString: "m 3-4",
+                        measures: (measures: Measure[]) => [
+                            measures[2],
+                            measures[3],
+                        ],
+                    },
+                ],
+            },
+            {
+                durations: [
+                    [0.75, 0.75, 0.5],
+                    [0.75, 0.75, 0.5],
+                ],
+                expected: [
+                    {
+                        type: "real",
+                        name: "",
+                        tempo: 120,
+                        bigBeatsPerMeasure: 3,
+                        numOfRepeats: 2,
+                        strongBeatIndexes: [0, 1],
+                        measureRangeString: "m 1-2",
+                        measures: (measures: Measure[]) => [
+                            measures[0],
+                            measures[1],
+                        ],
+                    },
+                ],
+            },
+        ])("should handle tempo changes", ({ durations, expected }) => {
+            const measures = beatArraysToMockMeasures(durations);
+            const result = TempoGroupsFromMeasures(measures);
+            expect(result).toEqual(
+                expected.map((exp) => ({
+                    ...exp,
+                    measures: exp.measures(measures),
+                })),
+            );
+        });
+    });
+
+    describe("ghost tempo groups", () => {
+        const createMockBeat = (id: number, duration: number): Beat => ({
+            id,
+            position: Math.random(),
+            duration,
+            includeInMeasure: true,
+            notes: null,
+            index: Math.random(),
+            timestamp: Math.random(),
+        });
+
+        // Helper function to create a mock measure
+        const createMockMeasure = ({
+            beats,
+            rehearsalMark = null,
+            number = 1,
+            id = Math.random(),
+            isGhost = false,
+        }: {
+            beats: Beat[];
+            rehearsalMark?: string | null;
+            number: number | null;
+            id?: number;
+            isGhost?: boolean;
+        }): Measure =>
+            ({
+                id,
+                startBeat: beats[0],
+                number,
+                rehearsalMark,
+                notes: null,
+                duration: beats.reduce((sum, beat) => sum + beat.duration, 0),
+                counts: beats.length,
+                beats,
+                timestamp: Math.random(),
+                isGhost,
+            }) as Measure;
+
+        describe("Only ghost groups", () => {
+            it.for([
+                {
+                    beats: Array.from({ length: 10 }, (_, i) =>
+                        createMockBeat(i, 0.5),
+                    ),
                 },
                 {
+                    beats: Array.from({ length: 20 }, (_, i) =>
+                        createMockBeat(i, 0.123),
+                    ),
+                },
+            ])("should create a ghost tempo group", ({ beats }) => {
+                const measure: Measure = {
+                    id: 1,
+                    beats,
+                    number: null,
+                    rehearsalMark: null,
+                    startBeat: beats[0],
+                    notes: null,
+                    isGhost: true,
+                    duration: beats.reduce(
+                        (sum, beat) => sum + beat.duration,
+                        0,
+                    ),
+                    counts: beats.length,
+                    timestamp: Math.random(),
+                };
+                const result = TempoGroupsFromMeasures([measure]);
+                expect(result).toHaveLength(1);
+                expect(result[0]).toMatchObject({
+                    type: "ghost",
+                    measures: [measure],
+                    numOfRepeats: 1,
+                    measureRangeString: null,
                     name: "",
                     tempo: 120,
-                    bigBeatsPerMeasure: 3,
-                    numOfRepeats: 2,
-                    strongBeatIndexes: [2],
-                    measureRangeString: "m 3-4",
-                    measures: (measures: Measure[]) => [
-                        measures[2],
-                        measures[3],
-                    ],
-                },
-            ],
-        },
-        {
-            durations: [
-                [0.75, 0.75, 0.5],
-                [0.75, 0.75, 0.5],
-            ],
-            expected: [
+                    bigBeatsPerMeasure: beats.length,
+                });
+            });
+        });
+
+        describe("Mix of real and ghost groups", () => {
+            it.for([
                 {
-                    name: "",
-                    tempo: 120,
-                    bigBeatsPerMeasure: 3,
-                    numOfRepeats: 2,
-                    strongBeatIndexes: [0, 1],
-                    measureRangeString: "m 1-2",
-                    measures: (measures: Measure[]) => [
-                        measures[0],
-                        measures[1],
+                    measures: [
+                        createMockMeasure({
+                            beats: Array.from({ length: 4 }, (_, i) =>
+                                createMockBeat(i, 0.5),
+                            ),
+                            number: 1,
+                        }),
+                        createMockMeasure({
+                            beats: Array.from({ length: 4 }, (_, i) =>
+                                createMockBeat(i, 0.5),
+                            ),
+                            number: 2,
+                        }),
+                        createMockMeasure({
+                            beats: Array.from({ length: 4 }, (_, i) =>
+                                createMockBeat(i, 0.5),
+                            ),
+                            number: null,
+                            isGhost: true,
+                        }),
+                        createMockMeasure({
+                            beats: Array.from({ length: 4 }, (_, i) =>
+                                createMockBeat(i, 0.123),
+                            ),
+                            number: 3,
+                        }),
                     ],
+                    expectedTempoGroups: [{}],
                 },
-            ],
-        },
-    ])("should handle tempo changes", ({ durations, expected }) => {
-        const measures = beatArraysToMockMeasures(durations);
-        const result = TempoGroupsFromMeasures(measures);
-        expect(result).toEqual(
-            expected.map((exp) => ({
-                ...exp,
-                measures: exp.measures(measures),
-            })),
-        );
+            ])("should create a ghost tempo group", ({ measures }) => {
+                const result = TempoGroupsFromMeasures(measures);
+                expect(result).toHaveLength(1);
+            });
+        });
     });
 });
 
@@ -1712,6 +1858,7 @@ describe("getLastBeatOfTempoGroup", () => {
             numOfRepeats: 1,
             measures: [],
             measureRangeString: "",
+            type: "real" as const,
         };
 
         expect(getLastBeatOfTempoGroup(tempoGroup)).toBeUndefined();
@@ -1749,6 +1896,7 @@ describe("getLastBeatOfTempoGroup", () => {
             numOfRepeats: 1,
             measures,
             measureRangeString: "m 1-2",
+            type: "real" as const,
         };
 
         const result = getLastBeatOfTempoGroup(tempoGroup);
@@ -1767,6 +1915,7 @@ describe("getLastBeatOfTempoGroup", () => {
             numOfRepeats: 1,
             measures: [measure],
             measureRangeString: "m 1",
+            type: "real" as const,
         };
 
         const result = getLastBeatOfTempoGroup(tempoGroup);

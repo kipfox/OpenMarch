@@ -155,6 +155,7 @@ module.exports = {
         "patreonMembers.json",
         "**/mock-databases/**",
         "**/_journal.json",
+        ".vscode/extensions.json",
     ],
     ignoreRegExpList: ["@[a-z\\-]+", "\\(#.*\\)"],
 };

@@ -52,8 +52,9 @@ type BaseTempoGroup = {
      * If the group is not a mixed meter, this is undefined.
      */
     strongBeatIndexes?: number[];
+    type: string;
 };
-export type TempoGroup = BaseTempoGroup & {
+export type RealTempoGroup = BaseTempoGroup & {
     /**
      * The number of times the group is repeated.
      */
@@ -69,16 +70,20 @@ export type TempoGroup = BaseTempoGroup & {
      * The measures in this group.
      */
     measures?: Measure[];
+    type: "real";
 };
 
 /**
- * A tempo group made up of a single ghost measure
+ * A tempo group made up of a single ghost measure. This is useful to create chunks of time that aren't actually in the music.
  */
 export type GhostTempoGroup = BaseTempoGroup & {
     numOfRepeats: 1;
     measureRangeString: null;
-    measures: Measure;
+    measures: [Measure];
+    type: "ghost";
 };
+
+export type TempoGroup = RealTempoGroup | GhostTempoGroup;
 
 const aboutEqual = (a: number, b: number, epsilon = 0.00001): boolean => {
     return Math.abs(a - b) < epsilon;
@@ -224,7 +229,6 @@ export const TempoGroupsFromMeasures = (measures: Measure[]): TempoGroup[] => {
         const measureBeats = measure.beats.length;
         const measureTempo = getMeasureTempo(measure);
 
-        const isSameTempo = measureIsSameTempo(measure, measures[i - 1]);
         // Create a new group if:
         // 1. The measure has a rehearsal mark
         // 2. The number of beats changes (time signature change)
@@ -234,7 +238,7 @@ export const TempoGroupsFromMeasures = (measures: Measure[]): TempoGroup[] => {
         if (
             measure.rehearsalMark ||
             measureBeats !== currentBeatsPerMeasure ||
-            !isSameTempo
+            !measureIsSameTempo(measure, measures[i - 1])
         ) {
             const name = currentGroup[0].rehearsalMark || "";
             const mString = measureRangeString(
@@ -243,6 +247,7 @@ export const TempoGroupsFromMeasures = (measures: Measure[]): TempoGroup[] => {
             );
             // new group because of tempo change
             groups.push({
+                type: "real",
                 name,
                 tempo: currentTempo,
                 bigBeatsPerMeasure: currentBeatsPerMeasure,
@@ -275,6 +280,7 @@ export const TempoGroupsFromMeasures = (measures: Measure[]): TempoGroup[] => {
     // Add the last group
     if (currentGroup.length > 0) {
         groups.push({
+            type: "real",
             name: currentGroup[0].rehearsalMark || "",
             tempo: currentTempo,
             bigBeatsPerMeasure: currentBeatsPerMeasure,
