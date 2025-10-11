@@ -136,6 +136,7 @@ module.exports = {
         "mello",
         "sqljs",
         "Invalidators",
+        "mrng",
     ],
     ignorePaths: [
         "node_modules/**",
