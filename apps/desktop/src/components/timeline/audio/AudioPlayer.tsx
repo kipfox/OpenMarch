@@ -391,9 +391,32 @@ export default function AudioPlayer() {
         }
     }, [waveSurfer, audioDuration, uiSettings.timelinePixelsPerSecond]);
 
+    // Disable scrolling on waveform with non-passive event listener
+    useEffect(() => {
+        const waveformElement = waveformRef.current;
+        if (!waveformElement) return;
+
+        const preventScroll = (e: WheelEvent) => {
+            e.preventDefault();
+        };
+
+        waveformElement.addEventListener("wheel", preventScroll, {
+            passive: false,
+        });
+
+        return () => {
+            waveformElement.removeEventListener("wheel", preventScroll);
+        };
+    }, []);
+
     return (
         <div className="w-fit pl-[40px]">
-            <div id="waveform" ref={waveformRef}></div>
+            <div
+                id="waveform"
+                ref={waveformRef}
+                className="overflow-hidden"
+                style={{ overscrollBehavior: "none" }}
+            ></div>
         </div>
     );
 }
