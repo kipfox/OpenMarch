@@ -551,6 +551,7 @@
         "endTempoPlaceholder": "オプション",
         "endTempoTooltip": "新しい グループ は 徐々 に エンド テンポ に 近づき ます が、 到達 する こと は ありません。\nこれは 新しい グループ へ 的 ため の スムーズ な 移行 を 作成 します。",
         "general": "一般的な",
+        "ghostGroup": "ghost group",
         "import": "インポート",
         "importAudioFile": "オーディオ ファイルをインポート",
         "importButton": "MusicXML ファイル をインポート",

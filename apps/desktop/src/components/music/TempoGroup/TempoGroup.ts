@@ -213,7 +213,52 @@ const getMeasureTempo = (measure: Measure) => {
     return output;
 };
 
-// eslint-disable-next-line max-lines-per-function
+/**
+ * Creates a tempo group from a set of measures
+ */
+const _createTempoGroupFromMeasures = (
+    measures: Measure[],
+    tempo: number,
+    beatsPerMeasure: number,
+    numOfRepeats: number,
+): TempoGroup => {
+    const hasGhost = measures.some((m) => m.isGhost);
+    const name = measures[0].rehearsalMark || "";
+
+    if (hasGhost) {
+        assert(
+            measures.length === 1,
+            `Ghost measure should have exactly one measure. Actual length: ${measures.length}`,
+        );
+        return {
+            type: "ghost",
+            name,
+            tempo,
+            bigBeatsPerMeasure: beatsPerMeasure,
+            numOfRepeats: 1,
+            measureRangeString: null,
+            strongBeatIndexes: undefined,
+            measures: [measures[0]],
+        };
+    }
+
+    return {
+        type: "real",
+        name,
+        tempo,
+        bigBeatsPerMeasure: beatsPerMeasure,
+        numOfRepeats,
+        measureRangeString: measureRangeString(
+            measures[0],
+            measures[measures.length - 1],
+        ),
+        strongBeatIndexes: measureIsMixedMeter(measures[0])
+            ? getStrongBeatIndexes(measures[0])
+            : undefined,
+        measures,
+    };
+};
+
 export const TempoGroupsFromMeasures = (measures: Measure[]): TempoGroup[] => {
     if (!measures.length) return [];
 
@@ -250,41 +295,14 @@ export const TempoGroupsFromMeasures = (measures: Measure[]): TempoGroup[] => {
             measureBeats !== currentBeatsPerMeasure ||
             !measureIsSameTempo(measure, measures[i - 1])
         ) {
-            const name = currentGroup[0].rehearsalMark || "";
-            // new group because of tempo change
-            if (groupHasGhost) {
-                assert(
-                    currentGroup.length === 1,
-                    `Ghost measure should have exactly one measure. Actual length: ${currentGroup.length}`,
-                );
-                groups.push({
-                    type: "ghost",
-                    name,
-                    tempo: currentTempo,
-                    bigBeatsPerMeasure: currentBeatsPerMeasure,
-                    numOfRepeats: 1,
-                    measureRangeString: null,
-                    strongBeatIndexes: undefined,
-                    measures: [currentGroup[0]],
-                });
-            } else {
-                const mString = measureRangeString(
-                    currentGroup[0],
-                    currentGroup[currentGroup.length - 1],
-                );
-                groups.push({
-                    type: "real",
-                    name,
-                    tempo: currentTempo,
-                    bigBeatsPerMeasure: currentBeatsPerMeasure,
-                    numOfRepeats: currentNumberOfRepeats, // Default to 1 repeat
-                    measureRangeString: mString,
-                    strongBeatIndexes: measureIsMixedMeter(currentGroup[0])
-                        ? getStrongBeatIndexes(currentGroup[0])
-                        : undefined,
-                    measures: currentGroup,
-                });
-            }
+            groups.push(
+                _createTempoGroupFromMeasures(
+                    currentGroup,
+                    currentTempo,
+                    currentBeatsPerMeasure,
+                    currentNumberOfRepeats,
+                ),
+            );
 
             if (
                 !measureHasOneTempo(measures[i - 1]) &&
@@ -306,37 +324,14 @@ export const TempoGroupsFromMeasures = (measures: Measure[]): TempoGroup[] => {
 
     // Add the last group
     if (currentGroup.length > 0) {
-        if (currentGroup.some((measure) => measure.isGhost)) {
-            assert(
-                currentGroup.length === 1,
-                `Ghost measure should have exactly one measure. Actual length: ${currentGroup.length}`,
-            );
-            groups.push({
-                type: "ghost",
-                name: currentGroup[0].rehearsalMark || "",
-                tempo: currentTempo,
-                bigBeatsPerMeasure: currentBeatsPerMeasure,
-                numOfRepeats: 1,
-                measureRangeString: null,
-                strongBeatIndexes: undefined,
-                measures: [currentGroup[0]],
-            });
-        } else
-            groups.push({
-                type: "real",
-                name: currentGroup[0].rehearsalMark || "",
-                tempo: currentTempo,
-                bigBeatsPerMeasure: currentBeatsPerMeasure,
-                numOfRepeats: currentNumberOfRepeats,
-                strongBeatIndexes: measureIsMixedMeter(currentGroup[0])
-                    ? getStrongBeatIndexes(currentGroup[0])
-                    : undefined,
-                measureRangeString: measureRangeString(
-                    currentGroup[0],
-                    currentGroup[currentGroup.length - 1],
-                ),
-                measures: currentGroup,
-            });
+        groups.push(
+            _createTempoGroupFromMeasures(
+                currentGroup,
+                currentTempo,
+                currentBeatsPerMeasure,
+                currentNumberOfRepeats,
+            ),
+        );
 
         if (
             !measureHasOneTempo(measures[measures.length - 1]) &&
@@ -381,12 +376,14 @@ export const newBeatsFromTempoGroup = ({
     bigBeatsPerMeasure,
     strongBeatIndexes,
     endTempo,
+    fromCreate,
 }: {
     tempo: number;
     numRepeats: number;
     bigBeatsPerMeasure: number;
     strongBeatIndexes?: number[];
     endTempo?: number;
+    fromCreate: boolean;
 }): NewBeatArgs[] => {
     const beats: NewBeatArgs[] = [];
     if (!endTempo || endTempo === tempo) {
@@ -418,10 +415,12 @@ export const newBeatsFromTempoGroup = ({
         }
     }
 
-    beats.push({
-        duration: 60 / (endTempo ?? tempo),
-        include_in_measure: true,
-    });
+    // If this is a new tempo group, include a last beat
+    if (fromCreate)
+        beats.push({
+            duration: 60 / (endTempo ?? tempo),
+            include_in_measure: true,
+        });
     return beats;
 };
 /**
@@ -547,6 +546,7 @@ export const _createFromTempoGroup = async ({
         bigBeatsPerMeasure: tempoGroup.bigBeatsPerMeasure,
         endTempo,
         strongBeatIndexes: tempoGroup.strongBeatIndexes,
+        fromCreate: true,
     });
 
     await transactionWithHistory(db, "createFromTempoGroup", async (tx) => {
@@ -710,9 +710,12 @@ export const _updateTempoGroup = async ({
         numRepeats: tempoGroup.numOfRepeats,
         bigBeatsPerMeasure: tempoGroup.bigBeatsPerMeasure,
         strongBeatIndexes: newStrongBeatIndexes,
+        fromCreate: false,
     });
 
     if (oldBeats.length !== newBeats.length) {
+        console.log("oldBeats", oldBeats);
+        console.log("newBeats", newBeats);
         throw new Error(
             "Tempo group has different number of beats. This should not happen. Please reach out to us!",
         );

@@ -558,6 +558,7 @@
         "endTempoPlaceholder": "Optional",
         "endTempoTooltip": "The new group will gradually go towards the end tempo, but will not reach it.\nThis is to create a smooth transition to a new group.",
         "general": "General",
+        "ghostGroup": "ghost group",
         "import": "Import",
         "importAudioFile": "Import audio file",
         "importButton": "Import MusicXML File",

@@ -66,6 +66,15 @@ function StaticTempoGroupCard({
         () => !!tempoGroup.strongBeatIndexes?.length && !isManualTempo,
         [tempoGroup.strongBeatIndexes, isManualTempo],
     );
+    const isGhost = tempoGroup.type === "ghost";
+    const totalDuration = useMemo(() => {
+        if (!isGhost || !tempoGroup.measures?.[0]?.beats) return null;
+        const sum = tempoGroup.measures[0].beats.reduce(
+            (acc, beat) => acc + beat.duration,
+            0,
+        );
+        return Math.round(sum * 100) / 100; // Round to 2 decimal places
+    }, [isGhost, tempoGroup.measures]);
     const trimmedName = tempoGroup.name.trim();
     return (
         <>
@@ -77,7 +86,9 @@ function StaticTempoGroupCard({
                 </div>
             )}
             <div
-                className={`bg-fg-2 border-stroke rounded-tr-6 rounded-b-6 rounded-6 flex justify-between border p-12`}
+                className={`bg-fg-2 border-stroke rounded-tr-6 rounded-b-6 rounded-6 flex justify-between border p-12 ${
+                    isGhost ? "opacity-50" : ""
+                }`}
             >
                 <div className="flex flex-col gap-8">
                     {tempoGroup.manualTempos ? (
@@ -108,12 +119,18 @@ function StaticTempoGroupCard({
                             </h3>
                         </div>
                     )}
-                    {tempoGroup.measureRangeString && (
+                    {isGhost && totalDuration !== null ? (
                         <p className="text-text-subtitle text-sm">
-                            {tempoGroup.measureRangeString}
-                            {tempoGroup.numOfRepeats > 1 &&
-                                ` (${tempoGroup.numOfRepeats}x)`}
+                            {totalDuration}s · <T keyName="music.ghostGroup" />
                         </p>
+                    ) : (
+                        tempoGroup.measureRangeString && (
+                            <p className="text-text-subtitle text-sm">
+                                {tempoGroup.measureRangeString}
+                                {tempoGroup.numOfRepeats > 1 &&
+                                    ` (${tempoGroup.numOfRepeats}x)`}
+                            </p>
+                        )
                     )}
                 </div>
                 <div className="flex flex-col items-end justify-between gap-4">

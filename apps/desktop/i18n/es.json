@@ -551,6 +551,7 @@
         "endTempoPlaceholder": "Opcional",
         "endTempoTooltip": "El nuevo grupo se dirigirá gradualmente hacia el tempo final, pero no lo alcanzará.\nEsto es para crear una transición suave a un nuevo grupo.",
         "general": "General",
+        "ghostGroup": "ghost group",
         "import": "Importar",
         "importAudioFile": "Importar archivo de audio",
         "importButton": "Importar Archivo MusicXML",

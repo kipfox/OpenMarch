@@ -1,9 +1,8 @@
 ---
-description: When creating new user-facing text
-alwaysApply: false
+alwaysApply: true
 ---
 
-# Localization Guidelines
+# Editing or adding text in UI components
 
 OpenMarch uses [Tolgee](https://tolgee.io/) for internationalization (i18n) and localization. All user-facing text must be localized to support multiple languages.
 
