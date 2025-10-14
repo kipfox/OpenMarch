@@ -3,8 +3,7 @@ import {
     getStrongBeatIndexesFromPattern,
     splitPatternString,
     useCreateFromTempoGroup,
-    useCreateWithoutMeasuresTempo,
-    useCreateWithoutMeasuresSeconds,
+    useCreateWithoutMeasures,
 } from "@/components/music/TempoGroup/TempoGroup";
 import {
     Input,
@@ -35,6 +34,7 @@ const NewTempoGroupForm = React.forwardRef<
     HTMLDivElement,
     NewTempoGroupFormProps
 >((props, ref) => {
+    console.log("startingPosition", props.startingPosition);
     const { data: utilityData } = useQuery(getUtilityQueryOptions());
 
     const [tempo, setTempo] = React.useState(
@@ -58,10 +58,8 @@ const NewTempoGroupForm = React.forwardRef<
     }, [props]);
 
     const { mutate: createFromTempoGroup } = useCreateFromTempoGroup(callback);
-    const { mutate: createWithoutMeasuresTempo } =
-        useCreateWithoutMeasuresTempo(callback);
-    const { mutate: createWithoutMeasuresSeconds } =
-        useCreateWithoutMeasuresSeconds(callback);
+    const { mutate: createWithoutMeasures } =
+        useCreateWithoutMeasures(callback);
     const subTextClass = clsx("text-text-subtitle text-sub ");
 
     // Main mode selection
@@ -138,7 +136,7 @@ const NewTempoGroupForm = React.forwardRef<
         e.preventDefault();
 
         const nameToUse = name.trim();
-        const startingPosition = props.startingPosition || 0;
+        const startingPosition = props.startingPosition;
 
         if (mode === "with-measures") {
             const tempoValue = parseInt(tempo) || 120;
@@ -146,7 +144,7 @@ const NewTempoGroupForm = React.forwardRef<
                 endTempo && !isMixedMeter ? parseInt(endTempo) : undefined;
             const repeatsValue = parseInt(repeats) || 4;
 
-            let newTempoGroup: TempoGroup;
+            let newTempoGroup: Omit<TempoGroup, "measureRangeString">;
             if (isMixedMeter) {
                 const strongBeatIndexes =
                     getStrongBeatIndexesFromPattern(selectedPattern);
@@ -158,6 +156,7 @@ const NewTempoGroupForm = React.forwardRef<
                         splitPatternString(selectedPattern).length,
                     numOfRepeats: repeatsValue,
                     strongBeatIndexes,
+                    type: "real" as const,
                 };
             } else {
                 newTempoGroup = {
@@ -166,6 +165,7 @@ const NewTempoGroupForm = React.forwardRef<
                     ...(endTempoValue && { endTempo: endTempoValue }),
                     bigBeatsPerMeasure: beatsPerMeasure,
                     numOfRepeats: repeatsValue,
+                    type: "real" as const,
                 };
             }
 
@@ -180,17 +180,17 @@ const NewTempoGroupForm = React.forwardRef<
 
             if (withoutMeasuresMode === "tempo") {
                 const tempoValue = parseInt(tempo) || 120;
-                void createWithoutMeasuresTempo({
-                    startingPosition,
-                    totalNumberOfBeats: beatsValue,
+                void createWithoutMeasures({
+                    startingPosition: startingPosition ?? 0, // TODO FIX THIS TO BE PREDICTABLE
+                    numberOfBeats: beatsValue,
                     tempoBpm: tempoValue,
                     name: nameToUse || undefined,
                 });
             } else {
                 // seconds mode
                 const secondsValue = parseFloat(totalDurationSeconds) || 4;
-                void createWithoutMeasuresSeconds({
-                    startingPosition,
+                void createWithoutMeasures({
+                    startingPosition: startingPosition ?? 0,
                     numberOfBeats: beatsValue,
                     name: nameToUse || undefined,
                     totalDurationSeconds: secondsValue,

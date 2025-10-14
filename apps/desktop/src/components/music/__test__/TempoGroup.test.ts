@@ -1,13 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
     getStrongBeatIndexes,
-    newBeatsFromTempoGroup,
+    _newAndUpdatedBeatsFromTempoGroup,
     TempoGroupsFromMeasures,
     getNewMeasuresFromCreatedBeats,
     getLastBeatOfTempoGroup,
     _createBeatsWithOneMeasure,
-    _createWithoutMeasuresSeconds,
-    _createWithoutMeasuresTempo,
+    _createWithoutMeasures,
     TempoGroup,
 } from "../TempoGroup/TempoGroup";
 import type Measure from "../../../global/classes/Measure";
@@ -2040,7 +2039,7 @@ describe("measureIsSameTempo", () => {
         });
     });
 });
-describe("newBeatsFromTempoGroup", () => {
+describe("_newAndUpdatedBeatsFromTempoGroup", () => {
     const fakeData = (seed?: number, endTempo: boolean = false) => {
         faker.seed(seed);
         const output = {
@@ -2050,6 +2049,8 @@ describe("newBeatsFromTempoGroup", () => {
             ]),
             numRepeats: faker.number.int({ min: 1, max: 200 }),
             bigBeatsPerMeasure: faker.number.int({ min: 1, max: 32 }),
+            fromCreate: true,
+            shouldUpdate: false,
             ...(endTempo && {
                 endTempo: faker.number.int({ min: 32, max: 240 }),
             }),
@@ -2057,182 +2058,272 @@ describe("newBeatsFromTempoGroup", () => {
         faker.seed();
         return output;
     };
-    describe("should create beats with constant tempo", () => {
-        it.for([
-            { tempo: 120, numRepeats: 1, bigBeatsPerMeasure: 4 },
-            { tempo: 120, numRepeats: 2, bigBeatsPerMeasure: 4 },
-            ...Array(SEED_AMOUNT)
-                .fill(0)
-                .map((_, i) => fakeData(i)),
-        ])(
-            "%# - {tempo: $tempo, numRepeats: $numRepeats, bigBeatsPerMeasure: $bigBeatsPerMeasure}",
-            (args) => {
-                const result = newBeatsFromTempoGroup(args);
-                const expectedTotalBeats =
-                    args.bigBeatsPerMeasure * args.numRepeats + 1;
-                expect(result).toHaveLength(expectedTotalBeats);
-                result.forEach((beat: NewBeatArgs, index: number) => {
-                    expect(beat.duration).toBe(60 / args.tempo);
-                    expect(beat.include_in_measure).toBe(true);
-                });
-            },
-        );
-    });
 
-    it("should create beats with changing tempo with endTempo", () => {
-        const result = newBeatsFromTempoGroup({
-            tempo: 120,
-            numRepeats: 1,
-            bigBeatsPerMeasure: 4,
-            endTempo: 80,
-        });
-        const expectedTotalBeats = 4 * 1 + 1;
-        expect(result).toHaveLength(expectedTotalBeats);
-
-        const expectedDurations = [
-            60 / 120, //
-            60 / 110,
-            60 / 100,
-            60 / 90,
-            60 / 80,
-        ].map((d) => Number(d.toFixed(8)));
-
-        result.forEach((beat: NewBeatArgs, index: number) => {
-            expect(Number(beat.duration.toFixed(8)), `index: ${index}`).toBe(
-                expectedDurations[index],
-            );
-            expect(beat.include_in_measure).toBe(true);
-        });
-    });
-
-    describe("should handle multiple repeats with changing tempo", () => {
-        it.for([
-            { tempo: 100, numRepeats: 2, bigBeatsPerMeasure: 3, endTempo: 70 },
-            ...Array.from({ length: SEED_AMOUNT }, (_, i) => fakeData(i, true)),
-        ])(
-            "%# - {tempo: $tempo, numRepeats: $numRepeats, bigBeatsPerMeasure: $bigBeatsPerMeasure, endTempo: $endTempo}",
-            (args) => {
-                const result = newBeatsFromTempoGroup(args);
-                const expectedTotalBeats =
-                    args.bigBeatsPerMeasure * args.numRepeats + 1;
-                expect(result).toHaveLength(expectedTotalBeats);
-                const tempoDelta =
-                    (args.tempo - args.endTempo!) / (expectedTotalBeats - 1);
-                const expectedTempos = Array.from(
-                    { length: expectedTotalBeats },
-                    (_, i) => args.tempo - tempoDelta * i,
-                );
-
-                const expectedDurations = [
-                    ...expectedTempos
-                        .map((tempo) => 60 / tempo)
-                        .map((d) => Number(d.toFixed(8))),
-                    60 / args.endTempo!,
-                ];
-
-                result.forEach((beat: NewBeatArgs, index: number) => {
-                    expect(
-                        Number(beat.duration.toFixed(8)),
-                        `index: ${index}`,
-                    ).toBe(expectedDurations[index]);
-                    expect(beat.include_in_measure).toBe(true);
-                });
-            },
-        );
-    });
-
-    it("should handle edge case with single beat per measure", () => {
-        const result = newBeatsFromTempoGroup({
-            tempo: 120,
-            numRepeats: 1,
-            bigBeatsPerMeasure: 1,
-        });
-        expect(result).toHaveLength(2);
-        expect(result[0].duration).toBe(0.5);
-        expect(result[1].duration).toBe(0.5);
-        expect(result[0].include_in_measure).toBe(true);
-    });
-
-    it("should handle edge case with very fast tempo", () => {
-        const result = newBeatsFromTempoGroup({
-            tempo: 240,
-            numRepeats: 1,
-            bigBeatsPerMeasure: 2,
-        });
-        expect(result).toHaveLength(3);
-        result.forEach((beat: NewBeatArgs) => {
-            expect(beat.duration).toBe(0.25); // 60/240 = 0.25
-            expect(beat.include_in_measure).toBe(true);
-        });
-    });
-
-    it("should handle edge case with very slow tempo", () => {
-        const result = newBeatsFromTempoGroup({
-            tempo: 30,
-            numRepeats: 1,
-            bigBeatsPerMeasure: 2,
-        });
-        expect(result).toHaveLength(3);
-        result.forEach((beat: NewBeatArgs) => {
-            expect(beat.duration).toBe(2); // 60/30 = 2
-            expect(beat.include_in_measure).toBe(true);
-        });
-    });
-
-    it("should handle tempo decrease with beats approaching but not reaching target", () => {
-        const result = newBeatsFromTempoGroup({
-            tempo: 180,
-            numRepeats: 1,
-            bigBeatsPerMeasure: 3,
-            endTempo: 120,
-        });
-        expect(result).toHaveLength(4);
-
-        // With 3 beats going from 180 to 120, the tempo delta is -20
-        // Since tempo changes AFTER each repeat (not each beat):
-        // All beats in first repeat: 180
-        const expectedDurations = [
-            60 / 180, //
-            60 / 160,
-            60 / 140,
-            60 / 120,
-        ].map((d) => Number(d.toFixed(8)));
-
-        result.forEach((beat: NewBeatArgs, index: number) => {
-            expect(Number(beat.duration.toFixed(8))).toBe(
-                expectedDurations[index],
-            );
-            expect(beat.include_in_measure).toBe(true);
-        });
-    });
-
-    describe("mixed meter", () => {
-        it.each([
-            {
-                bigBeatsPerMeasure: 4,
-                strongBeatIndexes: [1],
-                expectedDurations: [0.5, 0.75, 0.5, 0.5],
-            },
-            {
-                bigBeatsPerMeasure: 4,
-                strongBeatIndexes: [1, 3],
-                expectedDurations: [0.5, 0.75, 0.5, 0.75],
-            },
-            {
-                bigBeatsPerMeasure: 3,
-                strongBeatIndexes: [0, 1],
-                expectedDurations: [0.75, 0.75, 0.5],
-            },
-        ])(
-            "should handle mixed meter",
-            ({ strongBeatIndexes, expectedDurations, bigBeatsPerMeasure }) => {
-                const result = newBeatsFromTempoGroup({
+    describe("Creating new beats (fromCreate: true, no existing beats)", () => {
+        describe("should create beats with constant tempo", () => {
+            it.for([
+                {
                     tempo: 120,
                     numRepeats: 1,
-                    bigBeatsPerMeasure,
-                    strongBeatIndexes,
+                    bigBeatsPerMeasure: 4,
+                    fromCreate: true,
+
+                    shouldUpdate: false,
+                },
+                {
+                    tempo: 120,
+                    numRepeats: 2,
+                    bigBeatsPerMeasure: 4,
+                    fromCreate: true,
+
+                    shouldUpdate: false,
+                },
+                ...Array(SEED_AMOUNT)
+                    .fill(0)
+                    .map((_, i) => fakeData(i)),
+            ])(
+                "%# - {tempo: $tempo, numRepeats: $numRepeats, bigBeatsPerMeasure: $bigBeatsPerMeasure}",
+                (args) => {
+                    const { newBeats: result, modifiedBeats } =
+                        _newAndUpdatedBeatsFromTempoGroup(args);
+                    const expectedTotalBeats =
+                        args.bigBeatsPerMeasure * args.numRepeats + 1;
+                    expect(result).toHaveLength(expectedTotalBeats);
+                    expect(modifiedBeats).toHaveLength(0);
+                    result.forEach((beat: NewBeatArgs, index: number) => {
+                        expect(beat.duration).toBe(60 / args.tempo);
+                        expect(beat.include_in_measure).toBe(true);
+                    });
+                },
+            );
+        });
+
+        it("should create beats with changing tempo with endTempo", () => {
+            const { newBeats: result, modifiedBeats } =
+                _newAndUpdatedBeatsFromTempoGroup({
+                    tempo: 120,
+                    numRepeats: 1,
+                    bigBeatsPerMeasure: 4,
+                    endTempo: 80,
+                    fromCreate: true,
+
+                    shouldUpdate: false,
                 });
-                expect(result).toHaveLength(bigBeatsPerMeasure + 1); // 1 repeat * 4 beats
+            const expectedTotalBeats = 4 * 1 + 1;
+            expect(result).toHaveLength(expectedTotalBeats);
+            expect(modifiedBeats).toHaveLength(0);
+
+            const expectedDurations = [
+                60 / 120, //
+                60 / 110,
+                60 / 100,
+                60 / 90,
+                60 / 80,
+            ].map((d) => Number(d.toFixed(8)));
+
+            result.forEach((beat: NewBeatArgs, index: number) => {
+                expect(
+                    Number(beat.duration.toFixed(8)),
+                    `index: ${index}`,
+                ).toBe(expectedDurations[index]);
+                expect(beat.include_in_measure).toBe(true);
+            });
+        });
+
+        describe("should handle multiple repeats with changing tempo", () => {
+            it.for([
+                {
+                    tempo: 100,
+                    numRepeats: 2,
+                    bigBeatsPerMeasure: 3,
+                    endTempo: 70,
+                    fromCreate: true,
+
+                    shouldUpdate: false,
+                },
+                ...Array.from({ length: SEED_AMOUNT }, (_, i) =>
+                    fakeData(i, true),
+                ),
+            ])(
+                "%# - {tempo: $tempo, numRepeats: $numRepeats, bigBeatsPerMeasure: $bigBeatsPerMeasure, endTempo: $endTempo}",
+                (args) => {
+                    const { newBeats: result, modifiedBeats } =
+                        _newAndUpdatedBeatsFromTempoGroup(args);
+                    const expectedTotalBeats =
+                        args.bigBeatsPerMeasure * args.numRepeats + 1;
+                    expect(result).toHaveLength(expectedTotalBeats);
+                    expect(modifiedBeats).toHaveLength(0);
+                    const tempoDelta =
+                        (args.tempo - args.endTempo!) /
+                        (expectedTotalBeats - 1);
+                    const expectedTempos = Array.from(
+                        { length: expectedTotalBeats },
+                        (_, i) => args.tempo - tempoDelta * i,
+                    );
+
+                    const expectedDurations = [
+                        ...expectedTempos
+                            .map((tempo) => 60 / tempo)
+                            .map((d) => Number(d.toFixed(8))),
+                        60 / args.endTempo!,
+                    ];
+
+                    result.forEach((beat: NewBeatArgs, index: number) => {
+                        expect(
+                            Number(beat.duration.toFixed(8)),
+                            `index: ${index}`,
+                        ).toBe(expectedDurations[index]);
+                        expect(beat.include_in_measure).toBe(true);
+                    });
+                },
+            );
+        });
+
+        it("should handle edge case with single beat per measure", () => {
+            const { newBeats: result, modifiedBeats } =
+                _newAndUpdatedBeatsFromTempoGroup({
+                    tempo: 120,
+                    numRepeats: 1,
+                    bigBeatsPerMeasure: 1,
+                    fromCreate: true,
+
+                    shouldUpdate: false,
+                });
+            expect(result).toHaveLength(2);
+            expect(modifiedBeats).toHaveLength(0);
+            expect(result[0].duration).toBe(0.5);
+            expect(result[1].duration).toBe(0.5);
+            expect(result[0].include_in_measure).toBe(true);
+        });
+
+        it("should handle edge case with very fast tempo", () => {
+            const { newBeats: result, modifiedBeats } =
+                _newAndUpdatedBeatsFromTempoGroup({
+                    tempo: 240,
+                    numRepeats: 1,
+                    bigBeatsPerMeasure: 2,
+                    fromCreate: true,
+
+                    shouldUpdate: false,
+                });
+            expect(result).toHaveLength(3);
+            expect(modifiedBeats).toHaveLength(0);
+            result.forEach((beat: NewBeatArgs) => {
+                expect(beat.duration).toBe(0.25); // 60/240 = 0.25
+                expect(beat.include_in_measure).toBe(true);
+            });
+        });
+
+        it("should handle edge case with very slow tempo", () => {
+            const { newBeats: result, modifiedBeats } =
+                _newAndUpdatedBeatsFromTempoGroup({
+                    tempo: 30,
+                    numRepeats: 1,
+                    bigBeatsPerMeasure: 2,
+                    fromCreate: true,
+
+                    shouldUpdate: false,
+                });
+            expect(result).toHaveLength(3);
+            expect(modifiedBeats).toHaveLength(0);
+            result.forEach((beat: NewBeatArgs) => {
+                expect(beat.duration).toBe(2); // 60/30 = 2
+                expect(beat.include_in_measure).toBe(true);
+            });
+        });
+
+        it("should handle tempo decrease with beats approaching but not reaching target", () => {
+            const { newBeats: result, modifiedBeats } =
+                _newAndUpdatedBeatsFromTempoGroup({
+                    tempo: 180,
+                    numRepeats: 1,
+                    bigBeatsPerMeasure: 3,
+                    fromCreate: true,
+
+                    shouldUpdate: false,
+                    endTempo: 120,
+                });
+            expect(result).toHaveLength(4);
+            expect(modifiedBeats).toHaveLength(0);
+
+            // With 3 beats going from 180 to 120, the tempo delta is -20
+            // Since tempo changes AFTER each repeat (not each beat):
+            // All beats in first repeat: 180
+            const expectedDurations = [
+                60 / 180, //
+                60 / 160,
+                60 / 140,
+                60 / 120,
+            ].map((d) => Number(d.toFixed(8)));
+
+            result.forEach((beat: NewBeatArgs, index: number) => {
+                expect(Number(beat.duration.toFixed(8))).toBe(
+                    expectedDurations[index],
+                );
+                expect(beat.include_in_measure).toBe(true);
+            });
+        });
+
+        describe("mixed meter", () => {
+            it.each([
+                {
+                    bigBeatsPerMeasure: 4,
+                    strongBeatIndexes: [1],
+                    expectedDurations: [0.5, 0.75, 0.5, 0.5],
+                },
+                {
+                    bigBeatsPerMeasure: 4,
+                    strongBeatIndexes: [1, 3],
+                    expectedDurations: [0.5, 0.75, 0.5, 0.75],
+                },
+                {
+                    bigBeatsPerMeasure: 3,
+                    strongBeatIndexes: [0, 1],
+                    expectedDurations: [0.75, 0.75, 0.5],
+                },
+            ])(
+                "should handle mixed meter",
+                ({
+                    strongBeatIndexes,
+                    expectedDurations,
+                    bigBeatsPerMeasure,
+                }) => {
+                    const { newBeats: result, modifiedBeats } =
+                        _newAndUpdatedBeatsFromTempoGroup({
+                            tempo: 120,
+                            numRepeats: 1,
+                            bigBeatsPerMeasure,
+                            strongBeatIndexes,
+                            fromCreate: true,
+
+                            shouldUpdate: false,
+                        });
+                    expect(result).toHaveLength(bigBeatsPerMeasure + 1); // 1 repeat * 4 beats
+                    expect(modifiedBeats).toHaveLength(0);
+                    result.forEach((beat: NewBeatArgs, index: number) => {
+                        expect(beat.duration, `index: ${index}`).toBe(
+                            expectedDurations[index] ??
+                                Math.min(...expectedDurations),
+                        );
+                        expect(beat.include_in_measure).toBe(true);
+                    });
+                },
+            );
+
+            it("should handle mixed meter with two long beats", () => {
+                const { newBeats: result, modifiedBeats } =
+                    _newAndUpdatedBeatsFromTempoGroup({
+                        tempo: 120,
+                        numRepeats: 1,
+                        bigBeatsPerMeasure: 4,
+                        strongBeatIndexes: [1],
+                        fromCreate: true,
+
+                        shouldUpdate: false,
+                    });
+                expect(result).toHaveLength(5); // 1 repeat * 4 beats
+                expect(modifiedBeats).toHaveLength(0);
+                const expectedDurations = [0.5, 0.75, 0.5, 0.5];
                 result.forEach((beat: NewBeatArgs, index: number) => {
                     expect(beat.duration, `index: ${index}`).toBe(
                         expectedDurations[index] ??
@@ -2240,104 +2331,739 @@ describe("newBeatsFromTempoGroup", () => {
                     );
                     expect(beat.include_in_measure).toBe(true);
                 });
-            },
-        );
-
-        it("should handle mixed meter with two long beats", () => {
-            const result = newBeatsFromTempoGroup({
-                tempo: 120,
-                numRepeats: 1,
-                bigBeatsPerMeasure: 4,
-                strongBeatIndexes: [1],
             });
-            expect(result).toHaveLength(5); // 1 repeat * 4 beats
-            const expectedDurations = [0.5, 0.75, 0.5, 0.5];
-            result.forEach((beat: NewBeatArgs, index: number) => {
-                expect(beat.duration, `index: ${index}`).toBe(
-                    expectedDurations[index] ?? Math.min(...expectedDurations),
+        });
+
+        describe("Seeded tests", () => {
+            const generate = (seed?: number) => {
+                faker.seed(seed);
+                const bigBeatsPerMeasure = faker.number.int({
+                    min: 5,
+                    max: 35,
+                });
+                const possibleStrongBeatIndexes = Array.from(
+                    { length: bigBeatsPerMeasure },
+                    (_, i) => i,
                 );
-                expect(beat.include_in_measure).toBe(true);
+                const strongBeatIndexes = faker.helpers.uniqueArray(
+                    possibleStrongBeatIndexes,
+                    faker.number.int({
+                        min: 0,
+                        max: possibleStrongBeatIndexes.length,
+                    }),
+                );
+                const tempo = faker.number.int({ min: 32, max: 240 });
+                const numRepeats = faker.number.int({ min: 1, max: 200 });
+
+                const smallBeatDuration = 60 / tempo;
+                const strongBeatDuration = smallBeatDuration * 1.5;
+                const expectedMeasureDurations = Array(bigBeatsPerMeasure)
+                    .fill(smallBeatDuration)
+                    .map((duration, index) =>
+                        strongBeatIndexes.includes(index)
+                            ? strongBeatDuration
+                            : duration,
+                    );
+
+                const output = {
+                    bigBeatsPerMeasure,
+                    numRepeats,
+                    strongBeatIndexes,
+                    tempo,
+                    expectedMeasureDurations,
+                    smallBeatDuration,
+                    strongBeatDuration,
+                };
+                faker.seed();
+                return output;
+            };
+            it.for(seedObj)("%# - {seed: $seed}", (args) => {
+                const expectedValues = generate(args.seed);
+
+                const { newBeats: result, modifiedBeats } =
+                    _newAndUpdatedBeatsFromTempoGroup({
+                        tempo: expectedValues.tempo,
+                        numRepeats: expectedValues.numRepeats,
+                        bigBeatsPerMeasure: expectedValues.bigBeatsPerMeasure,
+                        strongBeatIndexes: expectedValues.strongBeatIndexes,
+                        fromCreate: true,
+
+                        shouldUpdate: false,
+                    });
+                expect(result).toHaveLength(
+                    expectedValues.bigBeatsPerMeasure *
+                        expectedValues.numRepeats +
+                        1,
+                );
+                expect(modifiedBeats).toHaveLength(0);
+
+                for (
+                    let createdBeatIndex = 0;
+                    createdBeatIndex < result.length;
+                    createdBeatIndex++
+                ) {
+                    const beatIndex =
+                        createdBeatIndex % expectedValues.bigBeatsPerMeasure;
+
+                    if (
+                        expectedValues.strongBeatIndexes.includes(beatIndex) &&
+                        createdBeatIndex !== result.length - 1 // Last beat should always be a small beat
+                    )
+                        expect(
+                            result[createdBeatIndex].duration,
+                            `createdBeatIndex: ${createdBeatIndex}`,
+                        ).toBe(expectedValues.strongBeatDuration);
+                    else
+                        expect(
+                            result[createdBeatIndex].duration,
+                            `createdBeatIndex: ${createdBeatIndex}`,
+                        ).toBe(expectedValues.smallBeatDuration);
+                    expect(result[createdBeatIndex].include_in_measure).toBe(
+                        true,
+                    );
+                }
+            });
+        });
+    }); // End of "Creating new beats"
+
+    describe("Updating existing beats (fromCreate: false, with existing beats)", () => {
+        describe("should update all existing beats with constant tempo", () => {
+            it("should update existing beats and create no new beats when all beats exist", () => {
+                // Create existing beats at positions 10-13 (4 beats)
+                const existingBeats = Array.from({ length: 4 }, (_, i) => ({
+                    id: i + 1,
+                    position: i + 10,
+                }));
+
+                const { newBeats, modifiedBeats } =
+                    _newAndUpdatedBeatsFromTempoGroup({
+                        tempo: 120,
+                        numRepeats: 1,
+                        bigBeatsPerMeasure: 4,
+                        fromCreate: false,
+
+                        shouldUpdate: true,
+                        startingPosition: 10,
+                        existingItems: { beats: existingBeats },
+                    });
+
+                expect(newBeats).toHaveLength(0);
+                expect(modifiedBeats).toHaveLength(4);
+                modifiedBeats.forEach((beat, index) => {
+                    expect(beat.id).toBe(existingBeats[index].id);
+                    expect(beat.duration).toBe(60 / 120);
+                    expect(beat.include_in_measure).toBe(true);
+                });
+            });
+
+            it("should update existing beats and create new beats when only some beats exist", () => {
+                // Create existing beats at positions 10-11 (2 beats)
+                const existingBeats = Array.from({ length: 2 }, (_, i) => ({
+                    id: i + 1,
+                    position: i + 10,
+                }));
+
+                const { newBeats, modifiedBeats } =
+                    _newAndUpdatedBeatsFromTempoGroup({
+                        tempo: 120,
+                        numRepeats: 1,
+                        bigBeatsPerMeasure: 4,
+                        fromCreate: false,
+
+                        shouldUpdate: true,
+                        startingPosition: 10,
+                        existingItems: { beats: existingBeats },
+                    });
+
+                expect(modifiedBeats).toHaveLength(2);
+                expect(newBeats).toHaveLength(2);
+
+                // Check modified beats
+                modifiedBeats.forEach((beat, index) => {
+                    expect(beat.id).toBe(existingBeats[index].id);
+                    expect(beat.duration).toBe(60 / 120);
+                    expect(beat.include_in_measure).toBe(true);
+                });
+
+                // Check new beats
+                newBeats.forEach((beat) => {
+                    expect(beat.duration).toBe(60 / 120);
+                    expect(beat.include_in_measure).toBe(true);
+                });
+            });
+
+            it("should only consider beats at or after starting position", () => {
+                // Create beats at positions 5-15 (11 beats)
+                const existingBeats = Array.from({ length: 11 }, (_, i) => ({
+                    id: i + 1,
+                    position: i + 5,
+                }));
+
+                const { newBeats, modifiedBeats } =
+                    _newAndUpdatedBeatsFromTempoGroup({
+                        tempo: 120,
+                        numRepeats: 1,
+                        bigBeatsPerMeasure: 4,
+                        fromCreate: false,
+
+                        shouldUpdate: true,
+                        startingPosition: 10,
+                        existingItems: { beats: existingBeats },
+                    });
+
+                // Only beats from position 10-15 (6 beats) should be considered
+                // We need 4 beats, so 4 should be modified, 0 should be created
+                expect(modifiedBeats).toHaveLength(4);
+                expect(newBeats).toHaveLength(0);
+
+                // Check that we only modified beats starting from position 10
+                expect(modifiedBeats[0].id).toBe(6); // Position 10 is the 6th beat (index 5 + 1)
+            });
+
+            it("should handle multiple repeats with existing beats", () => {
+                const existingBeats = Array.from({ length: 8 }, (_, i) => ({
+                    id: i + 1,
+                    position: i + 1,
+                }));
+
+                const { newBeats, modifiedBeats } =
+                    _newAndUpdatedBeatsFromTempoGroup({
+                        tempo: 120,
+                        numRepeats: 2,
+                        bigBeatsPerMeasure: 4,
+                        fromCreate: false,
+
+                        shouldUpdate: true,
+                        startingPosition: 0,
+                        existingItems: { beats: existingBeats },
+                    });
+
+                expect(modifiedBeats).toHaveLength(8);
+                expect(newBeats).toHaveLength(0);
+                modifiedBeats.forEach((beat) => {
+                    expect(beat.duration).toBe(60 / 120);
+                    expect(beat.include_in_measure).toBe(true);
+                });
+            });
+        });
+
+        describe("should update existing beats with changing tempo", () => {
+            it("should handle endTempo with all existing beats", () => {
+                const existingBeats = Array.from({ length: 4 }, (_, i) => ({
+                    id: i + 1,
+                    position: i + 1,
+                }));
+
+                const { newBeats, modifiedBeats } =
+                    _newAndUpdatedBeatsFromTempoGroup({
+                        tempo: 120,
+                        numRepeats: 1,
+                        bigBeatsPerMeasure: 4,
+                        endTempo: 80,
+                        fromCreate: false,
+
+                        shouldUpdate: true,
+                        startingPosition: 0,
+                        existingItems: { beats: existingBeats },
+                    });
+
+                expect(modifiedBeats).toHaveLength(4);
+                expect(newBeats).toHaveLength(0);
+
+                const expectedDurations = [
+                    60 / 120,
+                    60 / 110,
+                    60 / 100,
+                    60 / 90,
+                ].map((d) => Number(d.toFixed(8)));
+
+                modifiedBeats.forEach((beat, index) => {
+                    expect(
+                        Number(beat.duration!.toFixed(8)),
+                        `index: ${index}`,
+                    ).toBe(expectedDurations[index]);
+                    expect(beat.include_in_measure).toBe(true);
+                });
+            });
+
+            it("should handle endTempo with partial existing beats", () => {
+                const existingBeats = Array.from({ length: 2 }, (_, i) => ({
+                    id: i + 1,
+                    position: i + 1,
+                }));
+
+                const { newBeats, modifiedBeats } =
+                    _newAndUpdatedBeatsFromTempoGroup({
+                        tempo: 120,
+                        numRepeats: 1,
+                        bigBeatsPerMeasure: 4,
+                        endTempo: 80,
+                        fromCreate: false,
+
+                        shouldUpdate: true,
+                        startingPosition: 0,
+                        existingItems: { beats: existingBeats },
+                    });
+
+                expect(modifiedBeats).toHaveLength(2);
+                expect(newBeats).toHaveLength(2);
+
+                const expectedDurations = [
+                    60 / 120,
+                    60 / 110,
+                    60 / 100,
+                    60 / 90,
+                ].map((d) => Number(d.toFixed(8)));
+
+                // Check modified beats
+                modifiedBeats.forEach((beat, index) => {
+                    expect(
+                        Number(beat.duration!.toFixed(8)),
+                        `index: ${index}`,
+                    ).toBe(expectedDurations[index]);
+                    expect(beat.include_in_measure).toBe(true);
+                });
+
+                // Check new beats
+                newBeats.forEach((beat, index) => {
+                    expect(
+                        Number(beat.duration.toFixed(8)),
+                        `index: ${index + 2}`,
+                    ).toBe(expectedDurations[index + 2]);
+                    expect(beat.include_in_measure).toBe(true);
+                });
+            });
+
+            it("should handle multiple repeats with endTempo and existing beats", () => {
+                const existingBeats = Array.from({ length: 6 }, (_, i) => ({
+                    id: i + 1,
+                    position: i + 1,
+                }));
+
+                const { newBeats, modifiedBeats } =
+                    _newAndUpdatedBeatsFromTempoGroup({
+                        tempo: 100,
+                        numRepeats: 2,
+                        bigBeatsPerMeasure: 3,
+                        endTempo: 70,
+                        fromCreate: false,
+
+                        shouldUpdate: true,
+                        startingPosition: 0,
+                        existingItems: { beats: existingBeats },
+                    });
+
+                expect(modifiedBeats).toHaveLength(6);
+                expect(newBeats).toHaveLength(0);
+
+                const tempoDelta = (70 - 100) / 6;
+                const expectedTempos = Array.from(
+                    { length: 6 },
+                    (_, i) => 100 + tempoDelta * i,
+                );
+                const expectedDurations = expectedTempos.map((tempo) =>
+                    Number((60 / tempo).toFixed(8)),
+                );
+
+                modifiedBeats.forEach((beat, index) => {
+                    expect(
+                        Number(beat.duration!.toFixed(8)),
+                        `index: ${index}`,
+                    ).toBe(expectedDurations[index]);
+                    expect(beat.include_in_measure).toBe(true);
+                });
+            });
+        });
+
+        describe("should handle mixed meter with existing beats", () => {
+            it("should update beats with mixed meter pattern", () => {
+                const existingBeats = Array.from({ length: 4 }, (_, i) => ({
+                    id: i + 1,
+                    position: i + 1,
+                }));
+
+                const { newBeats, modifiedBeats } =
+                    _newAndUpdatedBeatsFromTempoGroup({
+                        tempo: 120,
+                        numRepeats: 1,
+                        bigBeatsPerMeasure: 4,
+                        strongBeatIndexes: [1],
+                        fromCreate: false,
+
+                        shouldUpdate: true,
+                        startingPosition: 0,
+                        existingItems: { beats: existingBeats },
+                    });
+
+                expect(modifiedBeats).toHaveLength(4);
+                expect(newBeats).toHaveLength(0);
+
+                const expectedDurations = [0.5, 0.75, 0.5, 0.5];
+                modifiedBeats.forEach((beat, index) => {
+                    expect(beat.duration, `index: ${index}`).toBe(
+                        expectedDurations[index],
+                    );
+                    expect(beat.include_in_measure).toBe(true);
+                });
+            });
+
+            it("should update beats with mixed meter and multiple strong beats", () => {
+                const existingBeats = Array.from({ length: 4 }, (_, i) => ({
+                    id: i + 1,
+                    position: i + 1,
+                }));
+
+                const { newBeats, modifiedBeats } =
+                    _newAndUpdatedBeatsFromTempoGroup({
+                        tempo: 120,
+                        numRepeats: 1,
+                        bigBeatsPerMeasure: 4,
+                        strongBeatIndexes: [1, 3],
+                        fromCreate: false,
+
+                        shouldUpdate: true,
+                        startingPosition: 0,
+                        existingItems: { beats: existingBeats },
+                    });
+
+                expect(modifiedBeats).toHaveLength(4);
+                expect(newBeats).toHaveLength(0);
+
+                const expectedDurations = [0.5, 0.75, 0.5, 0.75];
+                modifiedBeats.forEach((beat, index) => {
+                    expect(beat.duration, `index: ${index}`).toBe(
+                        expectedDurations[index],
+                    );
+                    expect(beat.include_in_measure).toBe(true);
+                });
+            });
+
+            it("should handle mixed meter with partial existing beats", () => {
+                const existingBeats = Array.from({ length: 2 }, (_, i) => ({
+                    id: i + 1,
+                    position: i + 1,
+                }));
+
+                const { newBeats, modifiedBeats } =
+                    _newAndUpdatedBeatsFromTempoGroup({
+                        tempo: 120,
+                        numRepeats: 1,
+                        bigBeatsPerMeasure: 4,
+                        strongBeatIndexes: [1, 3],
+                        fromCreate: false,
+
+                        shouldUpdate: true,
+                        startingPosition: 0,
+                        existingItems: { beats: existingBeats },
+                    });
+
+                expect(modifiedBeats).toHaveLength(2);
+                expect(newBeats).toHaveLength(2);
+
+                const expectedDurations = [0.5, 0.75, 0.5, 0.75];
+
+                // Check modified beats
+                modifiedBeats.forEach((beat, index) => {
+                    expect(beat.duration, `index: ${index}`).toBe(
+                        expectedDurations[index],
+                    );
+                    expect(beat.include_in_measure).toBe(true);
+                });
+
+                // Check new beats
+                newBeats.forEach((beat, index) => {
+                    expect(beat.duration, `index: ${index + 2}`).toBe(
+                        expectedDurations[index + 2],
+                    );
+                    expect(beat.include_in_measure).toBe(true);
+                });
+            });
+        });
+
+        describe("edge cases with existing beats", () => {
+            it("should handle starting position with no beats after it", () => {
+                const existingBeats = Array.from({ length: 3 }, (_, i) => ({
+                    id: i + 1,
+                    position: i + 1,
+                }));
+
+                const { newBeats, modifiedBeats } =
+                    _newAndUpdatedBeatsFromTempoGroup({
+                        tempo: 120,
+                        numRepeats: 1,
+                        bigBeatsPerMeasure: 2,
+                        fromCreate: false,
+
+                        shouldUpdate: true,
+                        startingPosition: 10, // After all existing beats
+                        existingItems: { beats: existingBeats },
+                    });
+
+                // No beats at or after position 10, so all should be new
+                expect(modifiedBeats).toHaveLength(0);
+                expect(newBeats).toHaveLength(2);
+            });
+
+            it("should handle empty existing beats array", () => {
+                const { newBeats, modifiedBeats } =
+                    _newAndUpdatedBeatsFromTempoGroup({
+                        tempo: 120,
+                        numRepeats: 1,
+                        bigBeatsPerMeasure: 4,
+                        fromCreate: false,
+
+                        shouldUpdate: true,
+                        startingPosition: 0,
+                        existingItems: { beats: [] },
+                    });
+
+                // With no existing beats, all should be new
+                expect(modifiedBeats).toHaveLength(0);
+                expect(newBeats).toHaveLength(4);
+            });
+
+            it("should handle very fast tempo with existing beats", () => {
+                const existingBeats = Array.from({ length: 2 }, (_, i) => ({
+                    id: i + 1,
+                    position: i + 1,
+                }));
+
+                const { newBeats, modifiedBeats } =
+                    _newAndUpdatedBeatsFromTempoGroup({
+                        tempo: 240,
+                        numRepeats: 1,
+                        bigBeatsPerMeasure: 2,
+                        fromCreate: false,
+
+                        shouldUpdate: true,
+                        startingPosition: 0,
+                        existingItems: { beats: existingBeats },
+                    });
+
+                expect(modifiedBeats).toHaveLength(2);
+                expect(newBeats).toHaveLength(0);
+                modifiedBeats.forEach((beat) => {
+                    expect(beat.duration).toBe(0.25); // 60/240 = 0.25
+                    expect(beat.include_in_measure).toBe(true);
+                });
+            });
+
+            it("should handle very slow tempo with existing beats", () => {
+                const existingBeats = Array.from({ length: 2 }, (_, i) => ({
+                    id: i + 1,
+                    position: i + 1,
+                }));
+
+                const { newBeats, modifiedBeats } =
+                    _newAndUpdatedBeatsFromTempoGroup({
+                        tempo: 30,
+                        numRepeats: 1,
+                        bigBeatsPerMeasure: 2,
+                        fromCreate: false,
+
+                        shouldUpdate: true,
+                        startingPosition: 0,
+                        existingItems: { beats: existingBeats },
+                    });
+
+                expect(modifiedBeats).toHaveLength(2);
+                expect(newBeats).toHaveLength(0);
+                modifiedBeats.forEach((beat) => {
+                    expect(beat.duration).toBe(2); // 60/30 = 2
+                    expect(beat.include_in_measure).toBe(true);
+                });
+            });
+        });
+
+        describe("seeded tests with existing beats", () => {
+            const generateWithExisting = (
+                seed?: number,
+                percentExisting: number = 0.5,
+            ) => {
+                faker.seed(seed);
+                const bigBeatsPerMeasure = faker.number.int({
+                    min: 2,
+                    max: 20,
+                });
+                const numRepeats = faker.number.int({ min: 1, max: 10 });
+                const totalBeatsNeeded = bigBeatsPerMeasure * numRepeats;
+                const numExistingBeats = Math.floor(
+                    totalBeatsNeeded * percentExisting,
+                );
+
+                const existingBeats = Array.from(
+                    { length: numExistingBeats },
+                    (_, i) => ({
+                        id: i + 1,
+                        position: i + 1,
+                    }),
+                );
+
+                const tempo = faker.number.int({ min: 32, max: 240 });
+                const hasEndTempo = faker.datatype.boolean();
+                const endTempo = hasEndTempo
+                    ? faker.number.int({ min: 32, max: 240 })
+                    : undefined;
+
+                const output = {
+                    tempo,
+                    numRepeats,
+                    bigBeatsPerMeasure,
+                    endTempo,
+                    fromCreate: false,
+
+                    shouldUpdate: true,
+                    startingPosition: 0,
+                    existingItems: { beats: existingBeats },
+                    numExistingBeats,
+                    totalBeatsNeeded,
+                };
+                faker.seed();
+                return output;
+            };
+
+            it.for(
+                Array.from({ length: SEED_AMOUNT }, (_, i) => ({ seed: i })),
+            )("%# - seed: $seed - all beats exist", (args) => {
+                const testData = generateWithExisting(args.seed, 1.0);
+                const { newBeats, modifiedBeats } =
+                    _newAndUpdatedBeatsFromTempoGroup(testData);
+
+                expect(modifiedBeats).toHaveLength(testData.totalBeatsNeeded);
+                expect(newBeats).toHaveLength(0);
+
+                modifiedBeats.forEach((beat) => {
+                    expect(beat.include_in_measure).toBe(true);
+                    expect(beat.duration).toBeGreaterThan(0);
+                });
+            });
+
+            it.for(
+                Array.from({ length: SEED_AMOUNT }, (_, i) => ({ seed: i })),
+            )("%# - seed: $seed - half beats exist", (args) => {
+                const testData = generateWithExisting(args.seed, 0.5);
+                const { newBeats, modifiedBeats } =
+                    _newAndUpdatedBeatsFromTempoGroup(testData);
+
+                expect(modifiedBeats.length + newBeats.length).toBe(
+                    testData.totalBeatsNeeded,
+                );
+                expect(modifiedBeats).toHaveLength(testData.numExistingBeats);
+                expect(newBeats).toHaveLength(
+                    testData.totalBeatsNeeded - testData.numExistingBeats,
+                );
+
+                modifiedBeats.forEach((beat) => {
+                    expect(beat.include_in_measure).toBe(true);
+                    expect(beat.duration).toBeGreaterThan(0);
+                });
+
+                newBeats.forEach((beat) => {
+                    expect(beat.include_in_measure).toBe(true);
+                    expect(beat.duration).toBeGreaterThan(0);
+                });
+            });
+
+            it.for(
+                Array.from({ length: SEED_AMOUNT }, (_, i) => ({ seed: i })),
+            )("%# - seed: $seed - quarter beats exist", (args) => {
+                const testData = generateWithExisting(args.seed, 0.25);
+                const { newBeats, modifiedBeats } =
+                    _newAndUpdatedBeatsFromTempoGroup(testData);
+
+                expect(modifiedBeats.length + newBeats.length).toBe(
+                    testData.totalBeatsNeeded,
+                );
+                expect(modifiedBeats).toHaveLength(testData.numExistingBeats);
+
+                modifiedBeats.forEach((beat) => {
+                    expect(beat.include_in_measure).toBe(true);
+                    expect(beat.duration).toBeGreaterThan(0);
+                });
+
+                newBeats.forEach((beat) => {
+                    expect(beat.include_in_measure).toBe(true);
+                    expect(beat.duration).toBeGreaterThan(0);
+                });
             });
         });
     });
 
-    describe("Seeded tests", () => {
-        const generate = (seed?: number) => {
-            faker.seed(seed);
-            const bigBeatsPerMeasure = faker.number.int({ min: 5, max: 35 });
-            const possibleStrongBeatIndexes = Array.from(
-                { length: bigBeatsPerMeasure },
-                (_, i) => i,
-            );
-            const strongBeatIndexes = faker.helpers.uniqueArray(
-                possibleStrongBeatIndexes,
-                faker.number.int({
-                    min: 0,
-                    max: possibleStrongBeatIndexes.length,
-                }),
-            );
-            const tempo = faker.number.int({ min: 32, max: 240 });
-            const numRepeats = faker.number.int({ min: 1, max: 200 });
+    describe("fromCreate behavior differences", () => {
+        it("fromCreate: true should add extra beat at end", () => {
+            const { newBeats } = _newAndUpdatedBeatsFromTempoGroup({
+                tempo: 120,
+                numRepeats: 1,
+                bigBeatsPerMeasure: 4,
+                fromCreate: true,
 
-            const smallBeatDuration = 60 / tempo;
-            const strongBeatDuration = smallBeatDuration * 1.5;
-            const expectedMeasureDurations = Array(bigBeatsPerMeasure)
-                .fill(smallBeatDuration)
-                .map((duration, index) =>
-                    strongBeatIndexes.includes(index)
-                        ? strongBeatDuration
-                        : duration,
-                );
-
-            const output = {
-                bigBeatsPerMeasure,
-                numRepeats,
-                strongBeatIndexes,
-                tempo,
-                expectedMeasureDurations,
-                smallBeatDuration,
-                strongBeatDuration,
-            };
-            faker.seed();
-            return output;
-        };
-        it.for(seedObj)("%# - {seed: $seed}", (args) => {
-            const expectedValues = generate(args.seed);
-
-            const result = newBeatsFromTempoGroup({
-                tempo: expectedValues.tempo,
-                numRepeats: expectedValues.numRepeats,
-                bigBeatsPerMeasure: expectedValues.bigBeatsPerMeasure,
-                strongBeatIndexes: expectedValues.strongBeatIndexes,
+                shouldUpdate: false,
+                startingPosition: 0,
             });
-            expect(result).toHaveLength(
-                expectedValues.bigBeatsPerMeasure * expectedValues.numRepeats +
-                    1,
-            );
 
-            for (
-                let createdBeatIndex = 0;
-                createdBeatIndex < result.length;
-                createdBeatIndex++
-            ) {
-                const beatIndex =
-                    createdBeatIndex % expectedValues.bigBeatsPerMeasure;
+            // Should have 4 beats + 1 extra beat
+            expect(newBeats).toHaveLength(5);
+        });
 
-                if (
-                    expectedValues.strongBeatIndexes.includes(beatIndex) &&
-                    createdBeatIndex !== result.length - 1 // Last beat should always be a small beat
-                )
-                    expect(
-                        result[createdBeatIndex].duration,
-                        `createdBeatIndex: ${createdBeatIndex}`,
-                    ).toBe(expectedValues.strongBeatDuration);
-                else
-                    expect(
-                        result[createdBeatIndex].duration,
-                        `createdBeatIndex: ${createdBeatIndex}`,
-                    ).toBe(expectedValues.smallBeatDuration);
-                expect(result[createdBeatIndex].include_in_measure).toBe(true);
-            }
+        it("fromCreate: false should not add extra beat at end", () => {
+            const { newBeats } = _newAndUpdatedBeatsFromTempoGroup({
+                tempo: 120,
+                numRepeats: 1,
+                bigBeatsPerMeasure: 4,
+                fromCreate: false,
+
+                shouldUpdate: true,
+                startingPosition: 0,
+            });
+
+            // Should have exactly 4 beats, no extra
+            expect(newBeats).toHaveLength(4);
+        });
+
+        it("fromCreate: true with existing beats should add extra beat if needed", () => {
+            const existingBeats = Array.from({ length: 3 }, (_, i) => ({
+                id: i + 1,
+                position: i + 1,
+            }));
+
+            const { newBeats, modifiedBeats } =
+                _newAndUpdatedBeatsFromTempoGroup({
+                    tempo: 120,
+                    numRepeats: 1,
+                    bigBeatsPerMeasure: 4,
+                    fromCreate: true,
+
+                    shouldUpdate: true,
+                    startingPosition: 0,
+                    existingItems: { beats: existingBeats },
+                });
+
+            expect(modifiedBeats).toHaveLength(3);
+            // Should create 1 regular beat + 1 extra beat
+            expect(newBeats).toHaveLength(2);
+        });
+
+        it("fromCreate: true with all existing beats should still add extra beat", () => {
+            const existingBeats = Array.from({ length: 4 }, (_, i) => ({
+                id: i + 1,
+                position: i + 1,
+            }));
+
+            const { newBeats, modifiedBeats } =
+                _newAndUpdatedBeatsFromTempoGroup({
+                    tempo: 120,
+                    numRepeats: 1,
+                    bigBeatsPerMeasure: 4,
+                    fromCreate: true,
+
+                    shouldUpdate: true,
+                    startingPosition: 0,
+                    existingItems: { beats: existingBeats },
+                });
+
+            expect(modifiedBeats).toHaveLength(4);
+            // Should create 1 extra beat at the end
+            expect(newBeats).toHaveLength(1);
         });
     });
 });
@@ -2608,6 +3334,198 @@ describe("getLastBeatOfTempoGroup", () => {
         expect(result).toBeDefined();
         expect(result).toBe(beats[beats.length - 1]);
     });
+
+    it("Exact number of existing beats and new beats", () => {
+        const args = {
+            tempo: 120,
+            numRepeats: 4,
+            bigBeatsPerMeasure: 4,
+            startingPosition: 1,
+            fromCreate: true,
+            shouldUpdate: true,
+            existingItems: {
+                measures: [],
+                beats: [
+                    {
+                        id: 0,
+                        position: 0,
+                        duration: 0,
+                        includeInMeasure: true,
+                        notes: null,
+                        index: 0,
+                        timestamp: 0,
+                    },
+                    {
+                        id: 1,
+                        position: 1,
+                        duration: 0.3,
+                        includeInMeasure: true,
+                        notes: null,
+                        index: 1,
+                        timestamp: 0,
+                    },
+                    {
+                        id: 2,
+                        position: 2,
+                        duration: 0.3,
+                        includeInMeasure: true,
+                        notes: null,
+                        index: 2,
+                        timestamp: 0.3,
+                    },
+                    {
+                        id: 3,
+                        position: 3,
+                        duration: 0.3,
+                        includeInMeasure: true,
+                        notes: null,
+                        index: 3,
+                        timestamp: 0.6,
+                    },
+                    {
+                        id: 4,
+                        position: 4,
+                        duration: 0.3,
+                        includeInMeasure: true,
+                        notes: null,
+                        index: 4,
+                        timestamp: 0.8999999999999999,
+                    },
+                    {
+                        id: 5,
+                        position: 5,
+                        duration: 0.3,
+                        includeInMeasure: true,
+                        notes: null,
+                        index: 5,
+                        timestamp: 1.2,
+                    },
+                    {
+                        id: 6,
+                        position: 6,
+                        duration: 0.3,
+                        includeInMeasure: true,
+                        notes: null,
+                        index: 6,
+                        timestamp: 1.5,
+                    },
+                    {
+                        id: 7,
+                        position: 7,
+                        duration: 0.3,
+                        includeInMeasure: true,
+                        notes: null,
+                        index: 7,
+                        timestamp: 1.8,
+                    },
+                    {
+                        id: 8,
+                        position: 8,
+                        duration: 0.3,
+                        includeInMeasure: true,
+                        notes: null,
+                        index: 8,
+                        timestamp: 2.1,
+                    },
+                    {
+                        id: 9,
+                        position: 9,
+                        duration: 0.3,
+                        includeInMeasure: true,
+                        notes: null,
+                        index: 9,
+                        timestamp: 2.4,
+                    },
+                    {
+                        id: 10,
+                        position: 10,
+                        duration: 0.3,
+                        includeInMeasure: true,
+                        notes: null,
+                        index: 10,
+                        timestamp: 2.6999999999999997,
+                    },
+                    {
+                        id: 11,
+                        position: 11,
+                        duration: 0.3,
+                        includeInMeasure: true,
+                        notes: null,
+                        index: 11,
+                        timestamp: 2.9999999999999996,
+                    },
+                    {
+                        id: 12,
+                        position: 12,
+                        duration: 0.3,
+                        includeInMeasure: true,
+                        notes: null,
+                        index: 12,
+                        timestamp: 3.2999999999999994,
+                    },
+                    {
+                        id: 13,
+                        position: 13,
+                        duration: 0.3,
+                        includeInMeasure: true,
+                        notes: null,
+                        index: 13,
+                        timestamp: 3.599999999999999,
+                    },
+                    {
+                        id: 14,
+                        position: 14,
+                        duration: 0.3,
+                        includeInMeasure: true,
+                        notes: null,
+                        index: 14,
+                        timestamp: 3.899999999999999,
+                    },
+                    {
+                        id: 15,
+                        position: 15,
+                        duration: 0.3,
+                        includeInMeasure: true,
+                        notes: null,
+                        index: 15,
+                        timestamp: 4.199999999999999,
+                    },
+                    {
+                        id: 16,
+                        position: 16,
+                        duration: 0.3,
+                        includeInMeasure: true,
+                        notes: null,
+                        index: 16,
+                        timestamp: 4.499999999999999,
+                    },
+                ],
+            },
+        };
+
+        const { newBeats, modifiedBeats } =
+            _newAndUpdatedBeatsFromTempoGroup(args);
+
+        expect(newBeats, "should create a single beat").toHaveLength(1);
+        const newBeat = newBeats[0];
+        expect(
+            newBeat.duration,
+            "new beat should have same duration as the tempo group",
+        ).toBe(0.5);
+        expect(modifiedBeats).toHaveLength(16);
+        const expectedIds = [
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
+        ];
+        modifiedBeats.forEach((beat) => {
+            expect(
+                beat.duration,
+                "modified beat should have same duration as the tempo group",
+            ).toBe(0.5);
+            expect(expectedIds, "modified beat ID should be [1,16]").toContain(
+                beat.id,
+            );
+        });
+    });
 });
 
 describeDbTests("Create without measures", (it) => {
@@ -2732,385 +3650,394 @@ describeDbTests("Create without measures", (it) => {
         });
     });
 
-    describe("_createWithoutMeasuresSeconds", () => {
-        testWithHistory(
-            "should create beats with total duration distributed evenly",
-            async ({ db }) => {
-                const startingPosition = 0;
-                const numberOfBeats = 4;
-                const totalDurationSeconds = 2.0;
+    describe("_createWithoutMeasures", () => {
+        describe("seconds mode", () => {
+            testWithHistory(
+                "should create beats with total duration distributed evenly",
+                async ({ db }) => {
+                    const startingPosition = 0;
+                    const numberOfBeats = 4;
+                    const totalDurationSeconds = 2.0;
 
-                await _createWithoutMeasuresSeconds({
-                    startingPosition,
-                    numberOfBeats,
-                    totalDurationSeconds,
-                });
+                    await _createWithoutMeasures({
+                        startingPosition,
+                        numberOfBeats,
+                        totalDurationSeconds,
+                    });
 
-                const beats = await getBeats({ db });
-                const measures = await getMeasures({ db });
+                    const beats = await getBeats({ db });
+                    const measures = await getMeasures({ db });
 
-                // +1 for the FIRST_BEAT at position 0
-                expect(beats).toHaveLength(numberOfBeats + 1);
-                expect(measures).toHaveLength(1);
+                    // +1 for the FIRST_BEAT at position 0
+                    expect(beats).toHaveLength(numberOfBeats + 1);
+                    expect(measures).toHaveLength(1);
 
-                // Skip first beat (FIRST_BEAT) and check created beats
-                const createdBeats = beats.slice(1);
-                const expectedDuration = totalDurationSeconds / numberOfBeats;
-                createdBeats.forEach((beat) => {
-                    expect(beat.duration).toBe(expectedDuration);
-                });
+                    // Skip first beat (FIRST_BEAT) and check created beats
+                    const createdBeats = beats.slice(1);
+                    const expectedDuration =
+                        totalDurationSeconds / numberOfBeats;
+                    createdBeats.forEach((beat) => {
+                        expect(beat.duration).toBe(expectedDuration);
+                    });
 
-                // Verify total duration of created beats
-                const totalDuration = createdBeats.reduce(
-                    (sum, beat) => sum + beat.duration,
-                    0,
-                );
-                expect(totalDuration).toBeCloseTo(totalDurationSeconds, 10);
-            },
-        );
+                    // Verify total duration of created beats
+                    const totalDuration = createdBeats.reduce(
+                        (sum, beat) => sum + beat.duration,
+                        0,
+                    );
+                    expect(totalDuration).toBeCloseTo(totalDurationSeconds, 10);
+                },
+            );
 
-        testWithHistory(
-            "should create beats with custom name",
-            async ({ db }) => {
-                const startingPosition = 0;
-                const numberOfBeats = 3;
-                const totalDurationSeconds = 3.0;
-                const name = "Intro";
+            testWithHistory(
+                "should create beats with custom name",
+                async ({ db }) => {
+                    const startingPosition = 0;
+                    const numberOfBeats = 3;
+                    const totalDurationSeconds = 3.0;
+                    const name = "Intro";
 
-                await _createWithoutMeasuresSeconds({
-                    startingPosition,
-                    numberOfBeats,
-                    name,
-                    totalDurationSeconds,
-                });
+                    await _createWithoutMeasures({
+                        startingPosition,
+                        numberOfBeats,
+                        name,
+                        totalDurationSeconds,
+                    });
 
-                const beats = await getBeats({ db });
-                const measures = await getMeasures({ db });
+                    const beats = await getBeats({ db });
+                    const measures = await getMeasures({ db });
 
-                // +1 for the FIRST_BEAT
-                expect(beats).toHaveLength(numberOfBeats + 1);
-                expect(measures).toHaveLength(1);
-                expect(measures[0].rehearsal_mark).toBe("Intro");
+                    // +1 for the FIRST_BEAT
+                    expect(beats).toHaveLength(numberOfBeats + 1);
+                    expect(measures).toHaveLength(1);
+                    expect(measures[0].rehearsal_mark).toBe("Intro");
 
-                // Skip first beat and check created beats - each should be 1 second
-                const createdBeats = beats.slice(1);
-                createdBeats.forEach((beat) => {
-                    expect(beat.duration).toBe(1.0);
-                });
-            },
-        );
+                    // Skip first beat and check created beats - each should be 1 second
+                    const createdBeats = beats.slice(1);
+                    createdBeats.forEach((beat) => {
+                        expect(beat.duration).toBe(1.0);
+                    });
+                },
+            );
 
-        testWithHistory(
-            "should handle single beat with total duration",
-            async ({ db }) => {
-                const startingPosition = 0;
-                const numberOfBeats = 1;
-                const totalDurationSeconds = 2.5;
+            testWithHistory(
+                "should handle single beat with total duration",
+                async ({ db }) => {
+                    const startingPosition = 0;
+                    const numberOfBeats = 1;
+                    const totalDurationSeconds = 2.5;
 
-                await _createWithoutMeasuresSeconds({
-                    startingPosition,
-                    numberOfBeats,
-                    totalDurationSeconds,
-                });
+                    await _createWithoutMeasures({
+                        startingPosition,
+                        numberOfBeats,
+                        totalDurationSeconds,
+                    });
 
-                const beats = await getBeats({ db });
-                const measures = await getMeasures({ db });
+                    const beats = await getBeats({ db });
+                    const measures = await getMeasures({ db });
 
-                // +1 for the FIRST_BEAT
-                expect(beats).toHaveLength(numberOfBeats + 1);
-                expect(measures).toHaveLength(1);
-                // The second beat (index 1) should have duration 2.5
-                expect(beats[1].duration).toBe(2.5);
-            },
-        );
+                    // +1 for the FIRST_BEAT
+                    expect(beats).toHaveLength(numberOfBeats + 1);
+                    expect(measures).toHaveLength(1);
+                    // The second beat (index 1) should have duration 2.5
+                    expect(beats[1].duration).toBe(2.5);
+                },
+            );
 
-        testWithHistory(
-            "should handle many beats with small durations",
-            async ({ db }) => {
-                const startingPosition = 0;
-                const numberOfBeats = 16;
-                const totalDurationSeconds = 4.0;
+            testWithHistory(
+                "should handle many beats with small durations",
+                async ({ db }) => {
+                    const startingPosition = 0;
+                    const numberOfBeats = 16;
+                    const totalDurationSeconds = 4.0;
 
-                await _createWithoutMeasuresSeconds({
-                    startingPosition,
-                    numberOfBeats,
-                    totalDurationSeconds,
-                });
+                    await _createWithoutMeasures({
+                        startingPosition,
+                        numberOfBeats,
+                        totalDurationSeconds,
+                    });
 
-                const beats = await getBeats({ db });
-                const measures = await getMeasures({ db });
+                    const beats = await getBeats({ db });
+                    const measures = await getMeasures({ db });
 
-                // +1 for the FIRST_BEAT
-                expect(beats).toHaveLength(numberOfBeats + 1);
-                expect(measures).toHaveLength(1);
+                    // +1 for the FIRST_BEAT
+                    expect(beats).toHaveLength(numberOfBeats + 1);
+                    expect(measures).toHaveLength(1);
 
-                // Skip first beat and check created beats
-                const createdBeats = beats.slice(1);
-                createdBeats.forEach((beat) => {
-                    expect(beat.duration).toBe(0.25);
-                });
-            },
-        );
+                    // Skip first beat and check created beats
+                    const createdBeats = beats.slice(1);
+                    createdBeats.forEach((beat) => {
+                        expect(beat.duration).toBe(0.25);
+                    });
+                },
+            );
 
-        testWithHistory(
-            "should create beats starting at non-zero position",
-            async ({ db }) => {
-                const startingPosition = 100;
-                const numberOfBeats = 2;
-                const totalDurationSeconds = 1.0;
+            testWithHistory(
+                "should create beats starting at non-zero position",
+                async ({ db }) => {
+                    const startingPosition = 100;
+                    const numberOfBeats = 2;
+                    const totalDurationSeconds = 1.0;
 
-                await _createWithoutMeasuresSeconds({
-                    startingPosition,
-                    numberOfBeats,
-                    totalDurationSeconds,
-                });
+                    await _createWithoutMeasures({
+                        startingPosition,
+                        numberOfBeats,
+                        totalDurationSeconds,
+                    });
 
-                const beats = await getBeats({ db });
+                    const beats = await getBeats({ db });
 
-                // +1 for the FIRST_BEAT
-                expect(beats).toHaveLength(numberOfBeats + 1);
-                // Skip first beat and check positions
-                expect(beats[1].position).toBe(101); // position after startingPosition
-                expect(beats[2].position).toBe(102);
-            },
-        );
-    });
-
-    describe("_createWithoutMeasuresTempo", () => {
-        testWithHistory("should create beats at 120 BPM", async ({ db }) => {
-            const startingPosition = 0;
-            const totalNumberOfBeats = 4;
-            const tempoBpm = 120;
-
-            await _createWithoutMeasuresTempo({
-                startingPosition,
-                totalNumberOfBeats,
-                tempoBpm,
-            });
-
-            const beats = await getBeats({ db });
-            const measures = await getMeasures({ db });
-
-            // +1 for the FIRST_BEAT
-            expect(beats).toHaveLength(totalNumberOfBeats + 1);
-            expect(measures).toHaveLength(1);
-
-            // Skip first beat and check created beats
-            const createdBeats = beats.slice(1);
-            const expectedDuration = 60 / tempoBpm;
-            createdBeats.forEach((beat) => {
-                expect(beat.duration).toBe(expectedDuration);
-            });
+                    // +1 for the FIRST_BEAT
+                    expect(beats).toHaveLength(numberOfBeats + 1);
+                    // Skip first beat and check positions
+                    expect(beats[1].position).toBe(101); // position after startingPosition
+                    expect(beats[2].position).toBe(102);
+                },
+            );
         });
 
-        testWithHistory("should create beats at 180 BPM", async ({ db }) => {
-            const startingPosition = 0;
-            const totalNumberOfBeats = 8;
-            const tempoBpm = 180;
+        describe("tempo mode", () => {
+            testWithHistory(
+                "should create beats at 120 BPM",
+                async ({ db }) => {
+                    const startingPosition = 0;
+                    const numberOfBeats = 4;
+                    const tempoBpm = 120;
 
-            await _createWithoutMeasuresTempo({
-                startingPosition,
-                totalNumberOfBeats,
-                tempoBpm,
-            });
+                    await _createWithoutMeasures({
+                        startingPosition,
+                        numberOfBeats,
+                        tempoBpm,
+                    });
 
-            const beats = await getBeats({ db });
+                    const beats = await getBeats({ db });
+                    const measures = await getMeasures({ db });
 
-            // +1 for the FIRST_BEAT
-            expect(beats).toHaveLength(totalNumberOfBeats + 1);
+                    // +1 for the FIRST_BEAT
+                    expect(beats).toHaveLength(numberOfBeats + 1);
+                    expect(measures).toHaveLength(1);
 
-            // Skip first beat and check created beats
-            const createdBeats = beats.slice(1);
-            const expectedDuration = 60 / tempoBpm;
-            createdBeats.forEach((beat) => {
-                expect(beat.duration).toBeCloseTo(expectedDuration, 10);
-            });
+                    // Skip first beat and check created beats
+                    const createdBeats = beats.slice(1);
+                    const expectedDuration = 60 / tempoBpm;
+                    createdBeats.forEach((beat) => {
+                        expect(beat.duration).toBe(expectedDuration);
+                    });
+                },
+            );
+
+            testWithHistory(
+                "should create beats at 180 BPM",
+                async ({ db }) => {
+                    const startingPosition = 0;
+                    const numberOfBeats = 8;
+                    const tempoBpm = 180;
+
+                    await _createWithoutMeasures({
+                        startingPosition,
+                        numberOfBeats,
+                        tempoBpm,
+                    });
+
+                    const beats = await getBeats({ db });
+
+                    // +1 for the FIRST_BEAT
+                    expect(beats).toHaveLength(numberOfBeats + 1);
+
+                    // Skip first beat and check created beats
+                    const createdBeats = beats.slice(1);
+                    const expectedDuration = 60 / tempoBpm;
+                    createdBeats.forEach((beat) => {
+                        expect(beat.duration).toBeCloseTo(expectedDuration, 10);
+                    });
+                },
+            );
+
+            testWithHistory(
+                "should create beats at 60 BPM (slow tempo)",
+                async ({ db }) => {
+                    const startingPosition = 0;
+                    const numberOfBeats = 4;
+                    const tempoBpm = 60;
+
+                    await _createWithoutMeasures({
+                        startingPosition,
+                        numberOfBeats,
+                        tempoBpm,
+                    });
+
+                    const beats = await getBeats({ db });
+
+                    // +1 for the FIRST_BEAT
+                    expect(beats).toHaveLength(numberOfBeats + 1);
+
+                    // Skip first beat and check created beats
+                    const createdBeats = beats.slice(1);
+                    createdBeats.forEach((beat) => {
+                        expect(beat.duration).toBe(1.0);
+                    });
+                },
+            );
+
+            testWithHistory(
+                "should create beats at 240 BPM (fast tempo)",
+                async ({ db }) => {
+                    const startingPosition = 0;
+                    const numberOfBeats = 4;
+                    const tempoBpm = 240;
+
+                    await _createWithoutMeasures({
+                        startingPosition,
+                        numberOfBeats,
+                        tempoBpm,
+                    });
+
+                    const beats = await getBeats({ db });
+
+                    // +1 for the FIRST_BEAT
+                    expect(beats).toHaveLength(numberOfBeats + 1);
+
+                    // Skip first beat and check created beats
+                    const createdBeats = beats.slice(1);
+                    createdBeats.forEach((beat) => {
+                        expect(beat.duration).toBe(0.25);
+                    });
+                },
+            );
+
+            testWithHistory(
+                "should create beats with custom name",
+                async ({ db }) => {
+                    const startingPosition = 0;
+                    const numberOfBeats = 3;
+                    const tempoBpm = 100;
+                    const name = "Verse 1";
+
+                    await _createWithoutMeasures({
+                        startingPosition,
+                        numberOfBeats,
+                        tempoBpm,
+                        name,
+                    });
+
+                    const beats = await getBeats({ db });
+                    const measures = await getMeasures({ db });
+
+                    // +1 for the FIRST_BEAT
+                    expect(beats).toHaveLength(numberOfBeats + 1);
+                    expect(measures).toHaveLength(1);
+                    expect(measures[0].rehearsal_mark).toBe("Verse 1");
+
+                    // Skip first beat and check created beats
+                    const createdBeats = beats.slice(1);
+                    createdBeats.forEach((beat) => {
+                        expect(beat.duration).toBe(0.6);
+                    });
+                },
+            );
+
+            testWithHistory(
+                "should create single beat at given tempo",
+                async ({ db }) => {
+                    const startingPosition = 0;
+                    const numberOfBeats = 1;
+                    const tempoBpm = 90;
+
+                    await _createWithoutMeasures({
+                        startingPosition,
+                        numberOfBeats,
+                        tempoBpm,
+                    });
+
+                    const beats = await getBeats({ db });
+                    const measures = await getMeasures({ db });
+
+                    // +1 for the FIRST_BEAT
+                    expect(beats).toHaveLength(numberOfBeats + 1);
+                    expect(measures).toHaveLength(1);
+
+                    // Check the created beat (index 1)
+                    expect(beats[1].duration).toBeCloseTo(60 / 90, 10);
+                },
+            );
+
+            testWithHistory(
+                "should create many beats at given tempo",
+                async ({ db }) => {
+                    const startingPosition = 0;
+                    const numberOfBeats = 32;
+                    const tempoBpm = 140;
+
+                    await _createWithoutMeasures({
+                        startingPosition,
+                        numberOfBeats,
+                        tempoBpm,
+                    });
+
+                    const beats = await getBeats({ db });
+
+                    // +1 for the FIRST_BEAT
+                    expect(beats).toHaveLength(numberOfBeats + 1);
+
+                    // Skip first beat and check created beats
+                    const createdBeats = beats.slice(1);
+                    const expectedDuration = 60 / tempoBpm;
+                    createdBeats.forEach((beat) => {
+                        expect(beat.duration).toBeCloseTo(expectedDuration, 10);
+                    });
+                },
+            );
+
+            testWithHistory(
+                "should create beats starting at non-zero position",
+                async ({ db }) => {
+                    const startingPosition = 50;
+                    const numberOfBeats = 3;
+                    const tempoBpm = 120;
+
+                    await _createWithoutMeasures({
+                        startingPosition,
+                        numberOfBeats,
+                        tempoBpm,
+                    });
+
+                    const beats = await getBeats({ db });
+
+                    // +1 for the FIRST_BEAT
+                    expect(beats).toHaveLength(numberOfBeats + 1);
+                    // Skip first beat and check positions
+                    expect(beats[1].position).toBe(51); // position after startingPosition
+                    expect(beats[2].position).toBe(52);
+                    expect(beats[3].position).toBe(53);
+                },
+            );
+
+            testWithHistory(
+                "should handle floating point tempo",
+                async ({ db }) => {
+                    const startingPosition = 0;
+                    const numberOfBeats = 4;
+                    const tempoBpm = 132.5;
+
+                    await _createWithoutMeasures({
+                        startingPosition,
+                        numberOfBeats,
+                        tempoBpm,
+                    });
+
+                    const beats = await getBeats({ db });
+
+                    // +1 for the FIRST_BEAT
+                    expect(beats).toHaveLength(numberOfBeats + 1);
+
+                    // Skip first beat and check created beats
+                    const createdBeats = beats.slice(1);
+                    const expectedDuration = 60 / tempoBpm;
+                    createdBeats.forEach((beat) => {
+                        expect(beat.duration).toBeCloseTo(expectedDuration, 10);
+                    });
+                },
+            );
         });
-
-        testWithHistory(
-            "should create beats at 60 BPM (slow tempo)",
-            async ({ db }) => {
-                const startingPosition = 0;
-                const totalNumberOfBeats = 4;
-                const tempoBpm = 60;
-
-                await _createWithoutMeasuresTempo({
-                    startingPosition,
-                    totalNumberOfBeats,
-                    tempoBpm,
-                });
-
-                const beats = await getBeats({ db });
-
-                // +1 for the FIRST_BEAT
-                expect(beats).toHaveLength(totalNumberOfBeats + 1);
-
-                // Skip first beat and check created beats
-                const createdBeats = beats.slice(1);
-                createdBeats.forEach((beat) => {
-                    expect(beat.duration).toBe(1.0);
-                });
-            },
-        );
-
-        testWithHistory(
-            "should create beats at 240 BPM (fast tempo)",
-            async ({ db }) => {
-                const startingPosition = 0;
-                const totalNumberOfBeats = 4;
-                const tempoBpm = 240;
-
-                await _createWithoutMeasuresTempo({
-                    startingPosition,
-                    totalNumberOfBeats,
-                    tempoBpm,
-                });
-
-                const beats = await getBeats({ db });
-
-                // +1 for the FIRST_BEAT
-                expect(beats).toHaveLength(totalNumberOfBeats + 1);
-
-                // Skip first beat and check created beats
-                const createdBeats = beats.slice(1);
-                createdBeats.forEach((beat) => {
-                    expect(beat.duration).toBe(0.25);
-                });
-            },
-        );
-
-        testWithHistory(
-            "should create beats with custom name",
-            async ({ db }) => {
-                const startingPosition = 0;
-                const totalNumberOfBeats = 3;
-                const tempoBpm = 100;
-                const name = "Verse 1";
-
-                await _createWithoutMeasuresTempo({
-                    startingPosition,
-                    totalNumberOfBeats,
-                    tempoBpm,
-                    name,
-                });
-
-                const beats = await getBeats({ db });
-                const measures = await getMeasures({ db });
-
-                // +1 for the FIRST_BEAT
-                expect(beats).toHaveLength(totalNumberOfBeats + 1);
-                expect(measures).toHaveLength(1);
-                expect(measures[0].rehearsal_mark).toBe("Verse 1");
-
-                // Skip first beat and check created beats
-                const createdBeats = beats.slice(1);
-                createdBeats.forEach((beat) => {
-                    expect(beat.duration).toBe(0.6);
-                });
-            },
-        );
-
-        testWithHistory(
-            "should create single beat at given tempo",
-            async ({ db }) => {
-                const startingPosition = 0;
-                const totalNumberOfBeats = 1;
-                const tempoBpm = 90;
-
-                await _createWithoutMeasuresTempo({
-                    startingPosition,
-                    totalNumberOfBeats,
-                    tempoBpm,
-                });
-
-                const beats = await getBeats({ db });
-                const measures = await getMeasures({ db });
-
-                // +1 for the FIRST_BEAT
-                expect(beats).toHaveLength(totalNumberOfBeats + 1);
-                expect(measures).toHaveLength(1);
-
-                // Check the created beat (index 1)
-                expect(beats[1].duration).toBeCloseTo(60 / 90, 10);
-            },
-        );
-
-        testWithHistory(
-            "should create many beats at given tempo",
-            async ({ db }) => {
-                const startingPosition = 0;
-                const totalNumberOfBeats = 32;
-                const tempoBpm = 140;
-
-                await _createWithoutMeasuresTempo({
-                    startingPosition,
-                    totalNumberOfBeats,
-                    tempoBpm,
-                });
-
-                const beats = await getBeats({ db });
-
-                // +1 for the FIRST_BEAT
-                expect(beats).toHaveLength(totalNumberOfBeats + 1);
-
-                // Skip first beat and check created beats
-                const createdBeats = beats.slice(1);
-                const expectedDuration = 60 / tempoBpm;
-                createdBeats.forEach((beat) => {
-                    expect(beat.duration).toBeCloseTo(expectedDuration, 10);
-                });
-            },
-        );
-
-        testWithHistory(
-            "should create beats starting at non-zero position",
-            async ({ db }) => {
-                const startingPosition = 50;
-                const totalNumberOfBeats = 3;
-                const tempoBpm = 120;
-
-                await _createWithoutMeasuresTempo({
-                    startingPosition,
-                    totalNumberOfBeats,
-                    tempoBpm,
-                });
-
-                const beats = await getBeats({ db });
-
-                // +1 for the FIRST_BEAT
-                expect(beats).toHaveLength(totalNumberOfBeats + 1);
-                // Skip first beat and check positions
-                expect(beats[1].position).toBe(51); // position after startingPosition
-                expect(beats[2].position).toBe(52);
-                expect(beats[3].position).toBe(53);
-            },
-        );
-
-        testWithHistory(
-            "should handle floating point tempo",
-            async ({ db }) => {
-                const startingPosition = 0;
-                const totalNumberOfBeats = 4;
-                const tempoBpm = 132.5;
-
-                await _createWithoutMeasuresTempo({
-                    startingPosition,
-                    totalNumberOfBeats,
-                    tempoBpm,
-                });
-
-                const beats = await getBeats({ db });
-
-                // +1 for the FIRST_BEAT
-                expect(beats).toHaveLength(totalNumberOfBeats + 1);
-
-                // Skip first beat and check created beats
-                const createdBeats = beats.slice(1);
-                const expectedDuration = 60 / tempoBpm;
-                createdBeats.forEach((beat) => {
-                    expect(beat.duration).toBeCloseTo(expectedDuration, 10);
-                });
-            },
-        );
     });
 });

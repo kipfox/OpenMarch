@@ -327,7 +327,14 @@ export default function AudioPlayer() {
             timingMarkersPlugin.current = null;
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [waveformRef, waveformBuffer, theme, beats, measures]);
+    }, [
+        waveformRef,
+        waveformBuffer,
+        theme,
+        beats,
+        measures,
+        utilityData?.default_beat_duration,
+    ]);
 
     // Update metronome on/off state and volume
     useEffect(() => {

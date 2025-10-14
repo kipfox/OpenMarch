@@ -26,8 +26,6 @@ export interface Beat {
 export interface Measure {
     /** The beat this measure starts on */
     readonly startBeat: Beat;
-    /** The measure's number in the piece */
-    readonly number: number;
     /** The duration of the measure in seconds */
     readonly duration: number;
     /** The number of counts (or beats) in this measure */
@@ -68,14 +66,12 @@ export function createBeat(
  * @param rehearsalMark
  */
 export function createMeasure(
-    number: number,
     startBeat: Beat,
     beats: Beat[],
     rehearsalMark?: string,
 ): Measure {
     return {
         startBeat,
-        number,
         duration: beats.reduce((acc, b) => acc + b.duration, 0),
         counts: beats.length,
         beats,

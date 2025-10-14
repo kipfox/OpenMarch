@@ -39,7 +39,7 @@ export const realDatabaseBeatToDatabaseBeat = (
 
 export interface NewBeatArgs {
     duration: number;
-    include_in_measure: boolean;
+    include_in_measure?: boolean;
     notes?: string | null;
 }
 
@@ -56,7 +56,12 @@ const newBeatArgsToRealNewBeatArgs = (
 ): RealNewBeatArgs => {
     return {
         ...args,
-        include_in_measure: args.include_in_measure ? 1 : 0,
+        include_in_measure:
+            args.include_in_measure === undefined
+                ? 1
+                : args.include_in_measure
+                  ? 1
+                  : 0,
         position,
     };
 };
@@ -131,6 +136,8 @@ export async function getBeat({
 
 /**
  * Gets the first or last beat from the database.
+ *
+ * This is the same function just to reuse logic. The only difference is the sort order.
  *
  * @param db The database connection
  * @param isFirstBeat True to get the first beat, false to get the last beat

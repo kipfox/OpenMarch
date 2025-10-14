@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, test } from "vitest";
 import { getCurrentTime, type Measure } from "../../utils";
 import { saveWav } from "../../node-utils.ts";
 import { createMetronomeWav } from "../../metronome";
@@ -29,7 +29,6 @@ const input: Measure[] = [
             index: 0,
             timestamp: 0,
         },
-        number: 1,
         duration: 2,
         counts: 4,
         beats: [
@@ -72,7 +71,6 @@ const input: Measure[] = [
             index: 4,
             timestamp: 2.0,
         },
-        number: 2,
         duration: 2,
         counts: 4,
         beats: [
@@ -115,7 +113,6 @@ const input: Measure[] = [
             index: 8,
             timestamp: 4.0,
         },
-        number: 3,
         duration: 2,
         counts: 4,
         beats: [
@@ -158,7 +155,6 @@ const input: Measure[] = [
             index: 12,
             timestamp: 6.0,
         },
-        number: 4,
         duration: 2,
         counts: 4,
         beats: [

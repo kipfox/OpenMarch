@@ -8,6 +8,7 @@ import {
 import { describeDbTests, schema } from "@/test/base";
 import { getTestWithHistory } from "@/test/history";
 import { inArray } from "drizzle-orm";
+import fc from "fast-check";
 
 describeDbTests("marchers", (it) => {
     describe("database interactions", () => {
@@ -1190,5 +1191,34 @@ describeDbTests("marchers", (it) => {
                 },
             );
         });
+    });
+
+    it("create marchers with any name", async ({ db }) => {
+        await fc.assert(
+            fc
+                .asyncProperty(fc.string(), async (name) => {
+                    expect(await db.query.marchers.findMany()).toHaveLength(0);
+                    await createMarchers({
+                        newMarchers: [
+                            {
+                                name,
+                                section: "Trumpet",
+                                drill_prefix: "T",
+                                drill_order: 1,
+                                year: "2024",
+                                notes: null,
+                            },
+                        ],
+                        db,
+                    });
+
+                    const marchers = await db.query.marchers.findMany();
+                    expect(marchers).toHaveLength(1);
+                    expect(marchers[0].name).toEqual(name);
+                })
+                .afterEach(async () => {
+                    await db.delete(schema.marchers);
+                }),
+        );
     });
 });
