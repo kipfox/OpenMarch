@@ -265,7 +265,7 @@ export async function flattenOrder({
 /**
  * Flattens beat positions within a transaction.
  */
-const flattenOrderInTransaction = async ({
+export const flattenOrderInTransaction = async ({
     tx,
 }: {
     tx: DbTransaction;

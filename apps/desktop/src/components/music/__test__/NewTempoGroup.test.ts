@@ -8,13 +8,11 @@ import {
     NewMeasureArgs,
 } from "@/db-functions";
 import { describeDbTests, schema } from "@/test/base";
-import { describe, expect, it } from "vitest";
-import {
-    _createFromTempoGroup,
-    _createWithoutMeasures,
-} from "../TempoGroup/TempoGroup";
+import { describe, expect } from "vitest";
+import { _createFromTempoGroup } from "../TempoGroup/TempoGroup";
 import fc from "fast-check";
 import { eq, not } from "drizzle-orm";
+import { measures } from "electron/database/migrations/schema";
 
 const deleteAllBeatsAndMeasures = async (db: DbConnection) => {
     await db.delete(schema.measures);
@@ -111,139 +109,6 @@ describeDbTests("No existing beats", (it) => {
                 }),
             { verbose: 2 },
         );
-    });
-
-    describe("ghost tempo groups", () => {
-        const testCreateWithoutMeasure = async (
-            {
-                db,
-                numberOfBeats,
-                durationInSeconds,
-                tempoBpm,
-                name,
-            }: {
-                db: DbConnection;
-                numberOfBeats: number;
-                durationInSeconds: number;
-                tempoBpm: number;
-                name: string;
-            },
-            type: "seconds" | "tempo",
-        ) => {
-            if (type === "seconds")
-                await _createWithoutMeasures({
-                    startingPosition: 0,
-                    numberOfBeats,
-                    totalDurationSeconds: durationInSeconds,
-                    name,
-                });
-            else
-                await _createWithoutMeasures({
-                    startingPosition: 0,
-                    numberOfBeats,
-                    tempoBpm,
-                    name,
-                });
-
-            const allBeats = await db
-                .select()
-                .from(schema.beats)
-                .orderBy(schema.beats.position);
-            const allMeasures = await db.query.measures.findMany();
-
-            expect(
-                allBeats,
-                "There should be one beat more than the created beats",
-            ).toHaveLength(
-                numberOfBeats + 1, // +1 for the FIRST_BEAT
-            );
-            expect(allMeasures, "Should only have two measures").toHaveLength(
-                1,
-            );
-            expect(
-                allMeasures[0].start_beat,
-                "The measure start beat should be beat right after the first beat",
-            ).toBe(allBeats[1].id);
-            expect(allMeasures[0].is_ghost).toBeTruthy();
-
-            const expectedDuration =
-                type === "seconds"
-                    ? durationInSeconds / numberOfBeats
-                    : 60 / tempoBpm;
-            const expectedMessage =
-                type === "seconds"
-                    ? "Duration should be 'durationInSeconds / numberOfBeats'"
-                    : "Duration should be '60 / tempoBpm'";
-            allBeats.forEach((beat, index) => {
-                if (index === 0) {
-                    expect(beat.duration).toBe(0);
-                } else {
-                    expect(
-                        beat.duration,
-                        expectedMessage +
-                            ` - {beatId: ${beat.id}, position: ${beat.position}}`,
-                    ).toBe(expectedDuration);
-                }
-                expect(
-                    beat.position,
-                    "Expect position to match index (to show constant positions)",
-                ).toBe(index);
-            });
-        };
-
-        it("GHOST SECONDS - works with any number of big beats per measure and number of repeats", async ({
-            db,
-        }) => {
-            await fc.assert(
-                fc
-                    .asyncProperty(
-                        fc.record({
-                            name: fc.string({ minLength: 1, maxLength: 100 }),
-                            numberOfBeats: fc.integer({ min: 1, max: 100 }),
-                            durationInSeconds: fc.float({
-                                min: Math.fround(0.0001),
-                                max: Math.fround(50),
-                                noNaN: true,
-                            }),
-                        }),
-                        async (args) => {
-                            await testCreateWithoutMeasure(
-                                { db, tempoBpm: -1, ...args },
-                                "seconds",
-                            );
-                        },
-                    )
-                    .afterEach(async () => await deleteAllBeatsAndMeasures(db)),
-                { verbose: 2 },
-            );
-        });
-
-        it("GHOST TEMPO - works with any number of big beats per measure and number of repeats", async ({
-            db,
-        }) => {
-            await fc.assert(
-                fc
-                    .asyncProperty(
-                        fc.record({
-                            name: fc.string({ minLength: 1, maxLength: 100 }),
-                            numberOfBeats: fc.integer({ min: 1, max: 100 }),
-                            tempoBpm: fc.float({
-                                min: Math.fround(1),
-                                max: Math.fround(500),
-                                noNaN: true,
-                            }),
-                        }),
-                        async (args) => {
-                            await testCreateWithoutMeasure(
-                                { db, durationInSeconds: -1, ...args },
-                                "tempo",
-                            );
-                        },
-                    )
-                    .afterEach(async () => await deleteAllBeatsAndMeasures(db)),
-                { verbose: 2 },
-            );
-        });
     });
 });
 
@@ -444,9 +309,9 @@ describeDbTests("Existing beats with existing measures", (it) => {
     };
 
     describe("create at the start", () => {
-        const minTempoGroupsNum = 1;
-        const maxTempoGroupsNum = 50;
-        it.only("should create a tempo group at the start", async ({ db }) => {
+        it("should create a tempo group at the start - property based", async ({
+            db,
+        }) => {
             const durationArb = fc.float({
                 min: Math.fround(0.01),
                 max: Math.fround(2),
@@ -489,17 +354,22 @@ describeDbTests("Existing beats with existing measures", (it) => {
                                 args.newDurationArr[
                                     i % args.newDurationArr.length
                                 ],
-                            numberOfMeasures: 10,
-                            // args.numberOfMeasuresArr[
-                            //     i % args.numberOfMeasuresArr.length
-                            // ],
+                            numberOfMeasures:
+                                args.numberOfMeasuresArr[
+                                    i % args.numberOfMeasuresArr.length
+                                ],
                         });
                     }
 
                     await createGhostMeasureAndBeat({ db });
                     const measuresBefore = await db
                         .select()
-                        .from(schema.measures);
+                        .from(schema.measures)
+                        .innerJoin(
+                            schema.beats,
+                            eq(schema.measures.start_beat, schema.beats.id),
+                        )
+                        .orderBy(schema.beats.position);
                     const beatsBefore = await db
                         .select()
                         .from(schema.beats)
@@ -515,6 +385,22 @@ describeDbTests("Existing beats with existing measures", (it) => {
                         },
                         dbParam: db,
                         startingPosition: 0,
+                        existingItems: {
+                            beats: beatsBefore,
+                            measures: measuresBefore.map((m) => ({
+                                id: m.measures.id,
+                                isGhost: Boolean(m.measures.is_ghost),
+                                startBeat: {
+                                    id: m.measures.start_beat,
+                                    duration: 0.123,
+                                    position: 0,
+                                    includeInMeasure: true,
+                                    notes: null,
+                                    index: 0,
+                                    timestamp: 0,
+                                },
+                            })),
+                        },
                     });
 
                     const measuresAfter = await db
@@ -530,13 +416,18 @@ describeDbTests("Existing beats with existing measures", (it) => {
                         .from(schema.beats)
                         .orderBy(schema.beats.position);
 
-                    expect(measuresAfter).toHaveLength(
-                        measuresBefore.length + args.numberOfRepeats + 1, // +1 for the ghost measure
+                    expect(
+                        measuresAfter,
+                        "Number of measures should be the same as the number of repeats",
+                    ).toHaveLength(
+                        measuresBefore.length + args.numberOfRepeats, // No +1 because the ghost measure is already included
                     );
-                    expect(beatsAfter).toHaveLength(
+                    expect(
+                        beatsAfter,
+                        "should create the correct number of beats",
+                    ).toHaveLength(
                         beatsBefore.length +
-                            args.newBeatsPerMeasure * args.numberOfRepeats +
-                            1, // +1 for the ghost beat
+                            args.newBeatsPerMeasure * args.numberOfRepeats,
                     );
 
                     const beatRecord: Record<
@@ -564,13 +455,16 @@ describeDbTests("Existing beats with existing measures", (it) => {
                             "New measure should start at the correct beat",
                         ).toBe(startBeat.id);
 
-                        // Check if it is properly far away from previous measure
-                        const nextBeat =
-                            beatRecord[(i + 1) * args.newBeatsPerMeasure + 1];
-                        expect(
-                            nextBeat.position,
-                            "The position should be properly far away from previous measure",
-                        ).toBe(startBeat.position + args.newBeatsPerMeasure);
+                        if (i < measuresAfter.length - 1) {
+                            // Check if it is properly far away from previous measure
+                            const nextMeasure = measuresAfter[i + 1];
+                            expect(
+                                nextMeasure.beats.position,
+                                "The position should be properly far away from previous measure",
+                            ).toBe(
+                                startBeat.position + args.newBeatsPerMeasure,
+                            );
+                        }
                     }
 
                     // Check the new beats
@@ -589,25 +483,26 @@ describeDbTests("Existing beats with existing measures", (it) => {
                         ).toBe(i);
                     }
 
-                    // // Ensure the old measures were not modified
-                    // for (
-                    //     let i = args.numberOfRepeats;
-                    //     i < measuresBefore.length;
-                    //     i++
-                    // ) {
-                    //     const oldMeasure = measuresBefore.find(
-                    //         (m) => m.id === measuresAfter[i].measures.id,
-                    //     );
-                    //     if (!oldMeasure) {
-                    //         throw new Error(
-                    //             `Old measure not found for measure ${measuresAfter[i].measures.id}`,
-                    //         );
-                    //     }
-                    //     expect(
-                    //         measuresAfter[i].measures,
-                    //         "Old measure should not be modified",
-                    //     ).toMatchObject(oldMeasure);
-                    // }
+                    // Ensure the old measures were not modified
+                    for (
+                        let i = args.numberOfRepeats + 1;
+                        i < measuresBefore.length;
+                        i++
+                    ) {
+                        const oldMeasure = measuresBefore.find(
+                            (m) =>
+                                m.measures.id === measuresAfter[i].measures.id,
+                        );
+                        if (!oldMeasure) {
+                            throw new Error(
+                                `Old measure not found for measure ${measuresAfter[i].measures.id}`,
+                            );
+                        }
+                        expect(
+                            measuresAfter[i].measures,
+                            "Old measure should not be modified",
+                        ).toMatchObject(oldMeasure);
+                    }
                 },
             );
 
@@ -615,11 +510,149 @@ describeDbTests("Existing beats with existing measures", (it) => {
                 property.afterEach(
                     async () => await deleteAllBeatsAndMeasures(db),
                 ),
+                { verbose: 2 },
             );
+        });
+
+        it.only("should create a tempo group at the start - simple example", async ({
+            db,
+        }) => {
+            // Create the initial state as specified:
+            // - 30 beats total (beat 0 has duration 0, beats 1-16 have duration 0.5, beats 17-29 have duration 0.4)
+            // - 9 measures (8 real + 1 ghost at the end)
+
+            // Create beats 1-16 with duration 0.5
+            const initialNewBeats: NewBeatArgs[] = [];
+            for (let i = 1; i <= 16; i++)
+                initialNewBeats.push({
+                    duration: 0.5,
+                });
+
+            for (let i = 17; i <= 29; i++) {
+                initialNewBeats.push({
+                    duration: 0.4,
+                });
+            }
+
+            const createdBeats = await createBeats({
+                db,
+                startingPosition: 1,
+                newBeats: initialNewBeats,
+            });
+
+            const measureStartPositions = [1, 5, 9, 13, 17, 20, 23, 26, 29];
+
+            const initialNewMeasures: NewMeasureArgs[] =
+                measureStartPositions.map((start_beat, i, arr) => ({
+                    start_beat,
+                    is_ghost: i === arr.length - 1 ? 1 : 0,
+                }));
+            await createMeasures({ db, newItems: initialNewMeasures });
+            // Verify initial state
+            const measuresBefore = await db
+                .select()
+                .from(schema.measures)
+                .innerJoin(
+                    schema.beats,
+                    eq(schema.measures.start_beat, schema.beats.id),
+                )
+                .orderBy(schema.beats.position);
+            const beatsBefore = await db
+                .select()
+                .from(schema.beats)
+                .orderBy(schema.beats.position);
+
+            expect(measuresBefore).toHaveLength(9);
+            expect(beatsBefore).toHaveLength(30); // Our 30 beats plus the first beat
+
+            const newTempo = 180;
+            // Now create the tempo group: tempo 180, 5 beats per measure, 5 repeats at position 0
+            await _createFromTempoGroup({
+                tempoGroup: {
+                    name: "",
+                    tempo: newTempo,
+                    bigBeatsPerMeasure: 5,
+                    numOfRepeats: 5,
+                    type: "real",
+                },
+                dbParam: db,
+                startingPosition: 0,
+                existingItems: {
+                    beats: beatsBefore,
+                    measures: measuresBefore.map((m, i) => ({
+                        id: m.measures.id,
+                        isGhost: Boolean(m.measures.is_ghost),
+                        startBeat: {
+                            ...m.beats,
+                            timestamp: 0,
+                            index: i,
+                            includeInMeasure: true,
+                        },
+                    })),
+                },
+            });
+
+            // Verify the result
+            const measuresAfter = await db
+                .select()
+                .from(schema.measures)
+                .innerJoin(
+                    schema.beats,
+                    eq(schema.measures.start_beat, schema.beats.id),
+                )
+                .orderBy(schema.beats.position);
+            const beatsAfter = await db
+                .select()
+                .from(schema.beats)
+                .orderBy(schema.beats.position);
+
+            // Should have 9 original measures + 5 new measures = 14 total
+            expect(measuresAfter).toHaveLength(14);
+
+            // Should have 30 original beats + (5 beats per measure * 5 repeats) = 30 + 25 = 55 total
+            expect(beatsAfter).toHaveLength(55);
+
+            // Check the new tempo group beats (positions 0-24)
+            // Each beat should have duration = 60/180 = 1/3 = 0.333...
+            const expectedDuration = 60 / newTempo;
+            for (let i = 1; i < 25; i++) {
+                expect(
+                    beatsAfter[i].duration,
+                    "New beat should be the correct duration",
+                ).toEqual(expectedDuration);
+                expect(beatsAfter[i].position).toBe(i);
+            }
+
+            // Check that the new measures start at the correct positions
+            for (let i = 0; i < 6; i++) {
+                expect(
+                    measuresAfter[i].measures.is_ghost,
+                    `Measure ${i} should not be a ghost`,
+                ).toBe(0); // Not ghost
+                expect(
+                    measuresAfter[i].beats.position,
+                    `Measure ${i} should have correct position`,
+                ).toBe(i * 5 + 1); // Position 1, 6, 11, 16, 21, 26
+            }
+
+            // Check that original measures are preserved (they should now start at position 25+)
+            // The original measures should start at positions 25, 29, 33, 37, 41, 44, 47, 50, 53
+            const expectedOriginalPositions = [
+                26, 30, 34, 38, 42, 45, 48, 51, 54,
+            ];
+            for (let i = 0; i < 9; i++) {
+                const measureIndex = 5 + i; // Skip the 5 new measures
+                expect(measuresAfter[measureIndex].beats.position).toBe(
+                    expectedOriginalPositions[i],
+                );
+            }
+
+            // The last measure should still be a ghost
+            expect(measuresAfter[13].measures.is_ghost).toBe(1);
         });
     });
 
-    describe("Create at the middle", () => {});
+    // describe("Create at the middle", () => {});
 
-    describe("Create at the end", () => {});
+    // describe("Create at the end", () => {});
 });

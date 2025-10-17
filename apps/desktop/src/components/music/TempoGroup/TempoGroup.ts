@@ -11,7 +11,10 @@ import {
     createMeasuresInTransaction,
     DatabaseBeat,
     DbConnection,
+    flattenOrder,
+    flattenOrderInTransaction,
     ModifiedBeatArgs,
+    ModifiedMeasureArgs,
     NewBeatArgs,
     realDatabaseBeatToDatabaseBeat,
     transactionWithHistory,
@@ -23,7 +26,6 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { measureKeys } from "@/hooks/queries/useMeasures";
 import { beatKeys } from "@/hooks/queries";
 import { assert, conToastError } from "@/utilities/utils";
-import { useTimingObjects } from "@/hooks";
 
 type BaseTempoGroup = {
     /**
@@ -87,6 +89,22 @@ export type GhostTempoGroup = BaseTempoGroup & {
 };
 
 export type TempoGroup = RealTempoGroup | GhostTempoGroup;
+
+/**
+ * The values of a tempo group that are needed to create one.
+ */
+export type TempoGroupCreateArgs = Omit<
+    TempoGroup,
+    "measureRangeString" | "measures"
+>;
+
+/**
+ * Array of both measures and beats only with the properties needed for tempo groups
+ */
+export type ExistingItems = {
+    measures: Pick<Measure, "id" | "isGhost" | "startBeat">[];
+    beats: Pick<Beat, "id" | "position">[];
+};
 
 const aboutEqual = (a: number, b: number, epsilon = 0.00001): boolean => {
     return Math.abs(a - b) < epsilon;
@@ -489,7 +507,6 @@ export const _newAndUpdatedBeatsFromTempoGroup = (args: {
     };
     shouldUpdate: boolean;
 }): { newBeats: NewBeatArgs[]; modifiedBeats: ModifiedBeatArgs[] } => {
-    console.log("args", args);
     const {
         tempo,
         numRepeats,
@@ -500,7 +517,6 @@ export const _newAndUpdatedBeatsFromTempoGroup = (args: {
         existingItems = { beats: [] },
         shouldUpdate,
     } = args;
-    console.log("");
     // If the starting position is undefined, use the last beat position
     const startingPosition = args.startingPosition ?? 1;
     const beatsAtAndAfterStartingPosition = existingItems.beats
@@ -550,31 +566,84 @@ const convertDatabaseBeatsToBeats = (databaseBeats: DatabaseBeat[]): Beat[] => {
     });
 };
 
+/**
+ * Generates new measure argument objects from a sequence of created beats.
+ *
+ * This function is used after creating beats for a new tempo group. It generates the arguments
+ * needed to add new measures to the database, including a ghost measure at the end.
+ *
+ * @param createdBeats - An array of Beat objects, from which the measures will be defined.
+ * @param numOfRepeats - The number of non-ghost measures to create (excluding the ghost).
+ * @param bigBeatsPerMeasure - The number of beats in each measure.
+ * @param rehearsalMark - (Optional) The rehearsal mark to assign to the first measure.
+ * @returns An object consisting of:
+ *   - newMeasureArgs: Array of NewMeasureArgs for new measures, including a ghost measure at the end.
+ *   - modifiedMeasureArgs: Array of ModifiedMeasureArgs (always empty from this function).
+ */
 export const getNewMeasuresFromCreatedBeats = ({
     createdBeats,
     numOfRepeats,
     bigBeatsPerMeasure,
     rehearsalMark,
+    existingItems,
 }: {
     createdBeats: Beat[];
     numOfRepeats: number;
     bigBeatsPerMeasure: number;
     rehearsalMark?: string;
-}): NewMeasureArgs[] => {
+    existingItems: ExistingItems;
+}): {
+    newMeasureArgs: NewMeasureArgs[];
+    modifiedMeasureArgs: ModifiedMeasureArgs[];
+} => {
     const newMeasures: NewMeasureArgs[] = [];
+    const modifiedMeasures: ModifiedMeasureArgs[] = [];
+
+    const lastMeasurePosition = Math.max(
+        ...existingItems.measures.map((m) => m.startBeat.position),
+    );
     if (rehearsalMark?.trim() === "") rehearsalMark = undefined;
-    for (let i = 0; i < numOfRepeats; i++) {
+
+    // If the last existing measure is a ghost, update it to a real measure
+    // This is because ghost measures at the end are placeholders to show the end of the defined tempo.
+    // So, we want to overwrite them rather than appending after them
+    let startingIndex = 0;
+    const lastMeasureIsGhost = _lastMeasureIsGhost({ existingItems });
+    const lastMeasure = _getLastMeasure({ existingItems });
+    if (
+        lastMeasureIsGhost &&
+        lastMeasure &&
+        lastMeasurePosition === createdBeats[0].position
+    ) {
+        modifiedMeasures.push({
+            id: lastMeasure.id,
+            is_ghost: 0,
+        });
+        startingIndex += 1;
+    }
+    const newBeatPositions: number[] = [];
+    for (let i = startingIndex; i < numOfRepeats; i++) {
+        const beatObj = createdBeats[i * bigBeatsPerMeasure];
         newMeasures.push({
-            start_beat: createdBeats[i * bigBeatsPerMeasure].id,
+            start_beat: beatObj.id,
             rehearsal_mark: i === 0 ? rehearsalMark : undefined,
         });
+        newBeatPositions.push(beatObj.position);
     }
-    newMeasures.push({
-        start_beat: createdBeats[createdBeats.length - 1].id,
 
-        is_ghost: 1,
-    });
-    return newMeasures;
+    // Create a new ghost measure if there are no measures after
+    const maxNewPosition = Math.max(...newBeatPositions);
+    if (maxNewPosition > lastMeasurePosition) {
+        newMeasures.push({
+            start_beat: createdBeats[createdBeats.length - 1].id,
+
+            is_ghost: 1,
+        });
+    }
+    return {
+        newMeasureArgs: newMeasures,
+        modifiedMeasureArgs: modifiedMeasures,
+    };
 };
 
 /**
@@ -614,21 +683,8 @@ const useTempoGroupMutation = <TArgs>(
 };
 
 export const useCreateFromTempoGroup = (callback?: () => void) => {
-    const { beats, measures } = useTimingObjects();
     return useTempoGroupMutation(
-        (args: Parameters<typeof _createFromTempoGroup>[0]) =>
-            _createFromTempoGroup({
-                ...args,
-                existingItems: { measures, beats },
-            }),
-        "tempoGroup.createNewBeatsError",
-        "music.tempoGroupCreated",
-        callback,
-    );
-};
-export const useCreateWithoutMeasures = (callback?: () => void) => {
-    return useTempoGroupMutation(
-        _createWithoutMeasures,
+        _createFromTempoGroup,
         "tempoGroup.createNewBeatsError",
         "music.tempoGroupCreated",
         callback,
@@ -640,10 +696,7 @@ export const _shouldUpdate = ({
     existingItems,
 }: {
     startingPosition?: number;
-    existingItems?: {
-        measures: Pick<Measure, "id" | "isGhost" | "startBeat">[];
-        beats: Pick<Beat, "id" | "position">[];
-    };
+    existingItems?: ExistingItems;
 }) => {
     let shouldUpdate = false;
     if (existingItems && existingItems.beats) {
@@ -673,6 +726,45 @@ export const _shouldUpdate = ({
         }
     }
     return shouldUpdate;
+};
+
+export const _lastMeasureIsGhost = ({
+    existingItems,
+}: {
+    existingItems: ExistingItems;
+}) => {
+    const lastMeasure = _getLastMeasure({ existingItems });
+    return lastMeasure?.isGhost ?? false;
+};
+export const _getLastMeasure = ({
+    existingItems,
+}: {
+    existingItems: ExistingItems;
+}) => {
+    if (existingItems.measures.length === 0) {
+        return undefined;
+    }
+
+    const lastMeasure = existingItems.measures.reduce(
+        (lastMeasure, currentMeasure, index) => {
+            if (
+                currentMeasure.startBeat.position >
+                lastMeasure.startBeat.position
+            ) {
+                return currentMeasure;
+            } else if (
+                currentMeasure.startBeat.position ===
+                lastMeasure.startBeat.position
+            ) {
+                // When positions are equal, prefer the one that appears later in the array
+                return currentMeasure;
+            } else {
+                return lastMeasure;
+            }
+        },
+        existingItems.measures[0],
+    );
+    return lastMeasure;
 };
 
 /**
@@ -741,11 +833,14 @@ const _executeCreateTempoGroupTransaction = async (
         beatsToModify,
         startingPosition,
         tempoGroup,
+        existingItems,
     }: {
         beatsToCreate: NewBeatArgs[];
         beatsToModify: ModifiedBeatArgs[];
         startingPosition: number;
-        tempoGroup: Omit<TempoGroup, "measureRangeString">;
+        tempoGroup: TempoGroupCreateArgs;
+
+        existingItems: ExistingItems;
     },
 ) => {
     const beatsToUse = await _createAndUpdateBeatsInTransaction(tx, {
@@ -754,23 +849,30 @@ const _executeCreateTempoGroupTransaction = async (
         startingPosition,
     });
 
-    const newMeasures = getNewMeasuresFromCreatedBeats({
-        createdBeats: beatsToUse,
-        numOfRepeats: tempoGroup.numOfRepeats,
-        bigBeatsPerMeasure: tempoGroup.bigBeatsPerMeasure,
-        rehearsalMark: tempoGroup.name,
+    const { newMeasureArgs, modifiedMeasureArgs } =
+        getNewMeasuresFromCreatedBeats({
+            createdBeats: beatsToUse,
+            numOfRepeats: tempoGroup.numOfRepeats,
+            bigBeatsPerMeasure: tempoGroup.bigBeatsPerMeasure,
+            rehearsalMark: tempoGroup.name,
+            existingItems,
+        });
+
+    await updateMeasuresInTransaction({
+        tx,
+        modifiedItems: modifiedMeasureArgs,
     });
 
     await createMeasuresInTransaction({
         tx,
-        newItems: newMeasures,
+        newItems: newMeasureArgs,
     });
+    await flattenOrderInTransaction({ tx });
 };
 
 /**
  * Creates new beats and measures in the database from a tempo group
  *
- * If the starting position is 0, it will be set to 1.
  * If the starting position is undefined, it will be put at the end.
  */
 export const _createFromTempoGroup = async ({
@@ -780,22 +882,18 @@ export const _createFromTempoGroup = async ({
     existingItems,
     dbParam,
 }: {
-    tempoGroup: Omit<TempoGroup, "measureRangeString">;
+    tempoGroup: TempoGroupCreateArgs;
     endTempo?: number;
     startingPosition?: number;
-    existingItems?: {
-        measures: Pick<Measure, "id" | "isGhost" | "startBeat">[];
-        beats: Pick<Beat, "id" | "position">[];
-    };
+    existingItems: ExistingItems;
     dbParam?: DbConnection;
 }) => {
-    console.log("tempoGroup", tempoGroup);
-    if (startingPosition === 0) {
-        console.warn(
-            "startingPosition is 0, cannot update first beat. Setting to 1",
-        );
-        startingPosition = 1;
-    }
+    // if (startingPosition === 0) {
+    //     console.warn(
+    //         "startingPosition is 0, cannot update first beat. Setting to 1",
+    //     );
+    //     startingPosition = 1;
+    // }
 
     const shouldUpdate = _shouldUpdate({ startingPosition, existingItems });
 
@@ -821,105 +919,58 @@ export const _createFromTempoGroup = async ({
                 beatsToModify: modifiedBeats,
                 startingPosition: startingPosition!,
                 tempoGroup,
+                existingItems,
             }),
     );
 };
 
 /**
- * Creates beats and a measure with the first beat of the created beats.
+ * Generates the TempoGroupCreateArgs for a tempo group not associated with actual measures,
+ * based on either total duration (seconds) or fixed tempo (BPM).
  *
- * @param newBeats - The beats to create.
- * @param startingPosition - The starting position of the beats.
- * @param name - The name of the measure, optional.
- * @param isGhostMeasure - Whether to create a ghost measure (default: true)
- */
-export const _createBeatsWithOneMeasure = async ({
-    newBeats,
-    startingPosition,
-    name,
-    isGhostMeasure = true,
-}: {
-    newBeats: NewBeatArgs[];
-    startingPosition?: number;
-    name?: string;
-    isGhostMeasure?: boolean;
-}) => {
-    await transactionWithHistory(
-        db,
-        "createBeatsWithOneMeasure",
-        async (tx) => {
-            if (startingPosition == null) {
-                console.warn(
-                    "startingPosition is undefined, cannot update first beat. Setting to 1",
-                );
-                startingPosition = 1;
-            }
-            const createdBeats = await _createAndUpdateBeatsInTransaction(tx, {
-                beatsToCreate: newBeats,
-                beatsToModify: [],
-                startingPosition,
-            });
-
-            // Get the first beat to use as the measure start
-            const firstCreatedBeat = createdBeats.reduce(
-                (prev, curr) => (curr.position < prev.position ? curr : prev),
-                createdBeats[0],
-            );
-
-            const newMeasure = {
-                start_beat: firstCreatedBeat.id,
-                rehearsal_mark: name,
-                is_ghost: isGhostMeasure ? 1 : 0,
-            };
-            await createMeasuresInTransaction({
-                tx,
-                newItems: [newMeasure],
-            });
-        },
-    );
-};
-
-/**
- * Creates beats and a measure based on either tempo or total duration.
+ * This is used for 'ghost' groups such as count-ins or time notated between sections.
  *
- * @param startingPosition - The starting position of the beats.
- * @param numberOfBeats - The number of beats to create.
- * @param name - The name of the measure, optional.
- * @param totalDurationSeconds - The total duration of the beats (seconds mode).
- * @param tempoBpm - The tempo in BPM (tempo mode).
+ * There are two variants for the configuration object:
+ *
+ * - BySecondsArgs:
+ *     - numberOfBeats: The number of beats to create. The duration is determined by `numberOfBeats / totalDurationSeconds`.
+ *     - name: (Optional) The name for this group.
+ *     - totalDurationSeconds: The total duration for all beats, in seconds.
+ *
+ * - ByTempoArgs:
+ *     - numberOfBeats: The number of beats to create with the provided tempo.
+ *     - name: (Optional) The name for this group.
+ *     - tempoBpm: The tempo in beats per minute.
+ *
+ * @param args - The configuration object (either BySecondsArgs or ByTempoArgs).
+ * @returns TempoGroupCreateArgs for creation of a ghost tempo group.
  */
-export const _createWithoutMeasures = async (
+export const tempoGroupForNoMeasures = (
     args:
         | {
-              startingPosition: number;
               numberOfBeats: number;
               name?: string;
               totalDurationSeconds: number;
           }
         | {
-              startingPosition: number;
               numberOfBeats: number;
               name?: string;
               tempoBpm: number;
           },
-) => {
-    const beats: NewBeatArgs[] = [];
-
-    // Calculate duration based on which parameter was provided
-    const duration =
+): TempoGroupCreateArgs => {
+    // Calculate tempo based on which parameter was provided
+    const tempo =
         "totalDurationSeconds" in args
-            ? args.totalDurationSeconds / args.numberOfBeats
-            : 60 / args.tempoBpm;
+            ? (args.numberOfBeats / args.totalDurationSeconds) * 60
+            : args.tempoBpm;
 
-    for (let i = 0; i < args.numberOfBeats; i++) {
-        beats.push({ duration, include_in_measure: true });
-    }
-
-    await _createBeatsWithOneMeasure({
-        newBeats: beats,
-        startingPosition: args.startingPosition,
-        name: args.name,
-    });
+    return {
+        name: args.name ?? "",
+        tempo,
+        numOfRepeats: 1,
+        bigBeatsPerMeasure: args.numberOfBeats,
+        type: "ghost",
+    };
 };
 
 export const useUpdateTempoGroup = () => {
@@ -1030,6 +1081,7 @@ export const _updateManualTempos = async ({
 
 /**
  * Gets the last beat of a tempo group.
+ *
  * @param tempoGroup - The tempo group to get the last beat of.
  * @returns The last beat of the tempo group.
  */

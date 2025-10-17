@@ -5,9 +5,10 @@ import {
     TempoGroupsFromMeasures,
     getNewMeasuresFromCreatedBeats,
     getLastBeatOfTempoGroup,
-    _createBeatsWithOneMeasure,
-    _createWithoutMeasures,
     TempoGroup,
+    tempoGroupForNoMeasures,
+    _lastMeasureIsGhost,
+    ExistingItems,
 } from "../TempoGroup/TempoGroup";
 import type Measure from "../../../global/classes/Measure";
 import { measureIsMixedMeter } from "../TempoGroup/TempoGroup";
@@ -16,10 +17,7 @@ import { measureIsSameTempo } from "../TempoGroup/TempoGroup";
 import { measureHasOneTempo } from "../TempoGroup/TempoGroup";
 import { NewBeatArgs } from "@/db-functions";
 import { faker } from "@faker-js/faker";
-import { SEED_AMOUNT, seedObj, describeDbTests, schema } from "@/test/base";
-import { getBeats } from "@/db-functions/beat";
-import { getMeasures } from "@/db-functions/measures";
-import { getTestWithHistory } from "@/test/history";
+import { SEED_AMOUNT, seedObj } from "@/test/base";
 import fc from "fast-check";
 
 describe("TempoGroupsFromMeasures", () => {
@@ -3070,9 +3068,9 @@ describe("_newAndUpdatedBeatsFromTempoGroup", () => {
 
 describe("getNewMeasuresFromCreatedBeats", () => {
     // Helper function to create a mock beat
-    const createMockBeat = (id: number): Beat => ({
+    const createMockBeat = (id: number, position?: number): Beat => ({
         id,
-        position: faker.number.int({ min: 1, max: 100 }),
+        position: position ?? faker.number.int({ min: 1, max: 100 }),
         duration: 0.5,
         includeInMeasure: true,
         notes: null,
@@ -3089,17 +3087,21 @@ describe("getNewMeasuresFromCreatedBeats", () => {
             createMockBeat(5),
         ];
 
-        const result = getNewMeasuresFromCreatedBeats({
+        const { newMeasureArgs } = getNewMeasuresFromCreatedBeats({
             createdBeats: beats,
             numOfRepeats: 1,
             bigBeatsPerMeasure: 4,
+            existingItems: {
+                measures: [],
+                beats: [],
+            },
         });
 
-        expect(result).toHaveLength(2);
-        expect(result[0]).toEqual({
+        expect(newMeasureArgs).toHaveLength(2);
+        expect(newMeasureArgs[0]).toEqual({
             start_beat: 1,
         });
-        expect(result[1]).toEqual({
+        expect(newMeasureArgs[1]).toEqual({
             start_beat: 5,
             is_ghost: 1,
         });
@@ -3118,20 +3120,24 @@ describe("getNewMeasuresFromCreatedBeats", () => {
             createMockBeat(9),
         ];
 
-        const result = getNewMeasuresFromCreatedBeats({
+        const { newMeasureArgs } = getNewMeasuresFromCreatedBeats({
             createdBeats: beats,
             numOfRepeats: 2,
             bigBeatsPerMeasure: 4,
+            existingItems: {
+                measures: [],
+                beats: [],
+            },
         });
 
-        expect(result).toHaveLength(3);
-        expect(result[0]).toEqual({
+        expect(newMeasureArgs).toHaveLength(3);
+        expect(newMeasureArgs[0]).toEqual({
             start_beat: 1,
         });
-        expect(result[1]).toEqual({
+        expect(newMeasureArgs[1]).toEqual({
             start_beat: 5,
         });
-        expect(result[2]).toEqual({
+        expect(newMeasureArgs[2]).toEqual({
             start_beat: 9,
             is_ghost: 1,
         });
@@ -3145,17 +3151,21 @@ describe("getNewMeasuresFromCreatedBeats", () => {
             createMockBeat(4),
         ];
 
-        const result = getNewMeasuresFromCreatedBeats({
+        const { newMeasureArgs } = getNewMeasuresFromCreatedBeats({
             createdBeats: beats,
             numOfRepeats: 3,
             bigBeatsPerMeasure: 1,
+            existingItems: {
+                measures: [],
+                beats: [],
+            },
         });
 
-        expect(result).toHaveLength(4);
-        expect(result[0]).toEqual({ start_beat: 1 });
-        expect(result[1]).toEqual({ start_beat: 2 });
-        expect(result[2]).toEqual({ start_beat: 3 });
-        expect(result[3]).toEqual({ start_beat: 4, is_ghost: 1 });
+        expect(newMeasureArgs).toHaveLength(4);
+        expect(newMeasureArgs[0]).toEqual({ start_beat: 1 });
+        expect(newMeasureArgs[1]).toEqual({ start_beat: 2 });
+        expect(newMeasureArgs[2]).toEqual({ start_beat: 3 });
+        expect(newMeasureArgs[3]).toEqual({ start_beat: 4, is_ghost: 1 });
     });
 
     it("should handle large number of beats per measure", () => {
@@ -3163,30 +3173,38 @@ describe("getNewMeasuresFromCreatedBeats", () => {
             createMockBeat(i + 1),
         );
 
-        const result = getNewMeasuresFromCreatedBeats({
+        const { newMeasureArgs } = getNewMeasuresFromCreatedBeats({
             createdBeats: beats,
             numOfRepeats: 2,
             bigBeatsPerMeasure: 8,
+            existingItems: {
+                measures: [],
+                beats: [],
+            },
         });
 
-        expect(result).toHaveLength(3);
-        expect(result[0]).toEqual({ start_beat: 1 });
-        expect(result[1]).toEqual({ start_beat: 9 });
-        expect(result[2]).toEqual({ start_beat: 17, is_ghost: 1 });
+        expect(newMeasureArgs).toHaveLength(3);
+        expect(newMeasureArgs[0]).toEqual({ start_beat: 1 });
+        expect(newMeasureArgs[1]).toEqual({ start_beat: 9 });
+        expect(newMeasureArgs[2]).toEqual({ start_beat: 17, is_ghost: 1 });
     });
 
     it("should handle edge case with single repeat and single beat", () => {
         const beats = [createMockBeat(1), createMockBeat(2)];
 
-        const result = getNewMeasuresFromCreatedBeats({
+        const { newMeasureArgs } = getNewMeasuresFromCreatedBeats({
             createdBeats: beats,
             numOfRepeats: 1,
             bigBeatsPerMeasure: 1,
+            existingItems: {
+                measures: [],
+                beats: [],
+            },
         });
 
-        expect(result).toHaveLength(2);
-        expect(result[0]).toEqual({ start_beat: 1 });
-        expect(result[1]).toEqual({ start_beat: 2, is_ghost: 1 });
+        expect(newMeasureArgs).toHaveLength(2);
+        expect(newMeasureArgs[0]).toEqual({ start_beat: 1 });
+        expect(newMeasureArgs[1]).toEqual({ start_beat: 2, is_ghost: 1 });
     });
 
     describe("Seeded tests", () => {
@@ -3203,25 +3221,270 @@ describe("getNewMeasuresFromCreatedBeats", () => {
         };
         it.for(seedObj)("%# - {seed: $seed}", (args) => {
             const expectedValues = generate(args.seed);
-            const result = getNewMeasuresFromCreatedBeats({
+            const { newMeasureArgs } = getNewMeasuresFromCreatedBeats({
                 createdBeats: expectedValues.beats,
                 numOfRepeats: expectedValues.numOfRepeats,
                 bigBeatsPerMeasure: expectedValues.bigBeatsPerMeasure,
+                existingItems: {
+                    measures: [],
+                    beats: [],
+                },
             });
-            expect(result).toHaveLength(expectedValues.numOfRepeats + 1);
-            for (let i = 0; i < result.length - 1; i++) {
-                expect(result[i]).toMatchObject({
+            expect(newMeasureArgs).toHaveLength(
+                expectedValues.numOfRepeats + 1,
+            );
+            for (let i = 0; i < newMeasureArgs.length - 1; i++) {
+                expect(newMeasureArgs[i]).toMatchObject({
                     start_beat:
                         expectedValues.beats[
                             i * expectedValues.bigBeatsPerMeasure
                         ].id,
                 });
             }
-            expect(result[result.length - 1]).toMatchObject({
+            expect(newMeasureArgs[newMeasureArgs.length - 1]).toMatchObject({
                 start_beat:
                     expectedValues.beats[expectedValues.beats.length - 1].id,
                 is_ghost: 1,
             });
+        });
+    });
+
+    describe("with existing items", () => {
+        it("should replace the last measure if it is a ghost", () => {
+            const oldBeats = Array.from({ length: 10 }, (_, i) =>
+                createMockBeat(i + 1, i),
+            );
+            const existingItems: ExistingItems = {
+                measures: [
+                    {
+                        id: 1,
+                        isGhost: false,
+                        startBeat: oldBeats[0],
+                    },
+                    {
+                        id: 2,
+                        isGhost: false,
+                        startBeat: oldBeats[4],
+                    },
+                    {
+                        id: 3,
+                        isGhost: false,
+                        startBeat: oldBeats[8],
+                    },
+                    {
+                        id: 4,
+                        isGhost: true,
+                        startBeat: oldBeats[oldBeats.length - 1],
+                    },
+                ],
+                beats: oldBeats.map((beat) => ({
+                    id: beat.id,
+                    position: beat.position,
+                })),
+            };
+            const newBeats = [];
+            // create 8 new measures
+            for (let i = 11; i <= 19; i++) newBeats.push(createMockBeat(i));
+
+            const { newMeasureArgs, modifiedMeasureArgs } =
+                getNewMeasuresFromCreatedBeats({
+                    createdBeats: newBeats,
+                    numOfRepeats: 2,
+                    bigBeatsPerMeasure: 4,
+                    existingItems,
+                });
+
+            expect(modifiedMeasureArgs).toHaveLength(1);
+            expect(modifiedMeasureArgs[0]).toEqual({
+                id: 4,
+                is_ghost: 0,
+            });
+
+            expect(newMeasureArgs).toHaveLength(2);
+
+            expect(newMeasureArgs[0]).toMatchObject({
+                start_beat: 15,
+            });
+            expect(newMeasureArgs[1]).toMatchObject({
+                start_beat: 19,
+                is_ghost: 1,
+            });
+        });
+
+        it("should replace ghost measures with property-based testing", () => {
+            // Create arbitraries for property-based testing
+            const beatArbitrary = fc.record({
+                id: fc.integer({ min: 1, max: 1000 }),
+                position: fc.integer({ min: 0, max: 1000 }),
+                duration: fc.float({
+                    min: Math.fround(0.1),
+                    max: Math.fround(10),
+                }),
+                includeInMeasure: fc.constant(true),
+                notes: fc.constant(null),
+                index: fc.integer({ min: 0, max: 1000 }),
+                timestamp: fc.float({
+                    min: Math.fround(0),
+                    max: Math.fround(1000),
+                }),
+            });
+
+            const measureArbitrary = fc.record({
+                id: fc.integer({ min: 1, max: 100 }),
+                isGhost: fc.boolean(),
+                startBeat: beatArbitrary,
+            });
+
+            const existingItemsArbitrary = fc.record({
+                measures: fc.array(measureArbitrary, {
+                    minLength: 0,
+                    maxLength: 10,
+                }),
+                beats: fc.array(
+                    fc.record({
+                        id: fc.integer({ min: 1, max: 1000 }),
+                        position: fc.integer({ min: 0, max: 1000 }),
+                    }),
+                    { minLength: 0, maxLength: 50 },
+                ),
+            });
+
+            const testParamsArbitrary = fc
+                .record({
+                    createdBeats: fc.array(beatArbitrary, {
+                        minLength: 1,
+                        maxLength: 20,
+                    }),
+                    numOfRepeats: fc.integer({ min: 1, max: 5 }),
+                    bigBeatsPerMeasure: fc.integer({ min: 2, max: 8 }),
+                    existingItems: existingItemsArbitrary,
+                })
+                .filter(
+                    ({ createdBeats, numOfRepeats, bigBeatsPerMeasure }) => {
+                        // Ensure we have enough beats for the number of repeats plus one extra for the ghost measure
+                        const totalBeatsNeeded =
+                            numOfRepeats * bigBeatsPerMeasure + 1;
+
+                        // Ensure all beats have unique IDs
+                        const uniqueIds = new Set(
+                            createdBeats.map((beat) => beat.id),
+                        );
+                        const hasUniqueIds =
+                            uniqueIds.size === createdBeats.length;
+
+                        // Ensure all beats have unique positions
+                        const uniquePositions = new Set(
+                            createdBeats.map((beat) => beat.position),
+                        );
+                        const hasUniquePositions =
+                            uniquePositions.size === createdBeats.length;
+
+                        return (
+                            createdBeats.length >= totalBeatsNeeded &&
+                            hasUniqueIds &&
+                            hasUniquePositions
+                        );
+                    },
+                );
+
+            fc.assert(
+                fc.property(
+                    testParamsArbitrary,
+                    ({
+                        createdBeats,
+                        numOfRepeats,
+                        bigBeatsPerMeasure,
+                        existingItems,
+                    }) => {
+                        const { newMeasureArgs, modifiedMeasureArgs } =
+                            getNewMeasuresFromCreatedBeats({
+                                createdBeats,
+                                numOfRepeats,
+                                bigBeatsPerMeasure,
+                                existingItems,
+                            });
+
+                        // Property 1: If the measure with highest position is ghost, it should be modified
+                        // Use the same logic as _getLastMeasure to find the last measure
+                        const lastMeasure =
+                            existingItems.measures.length > 0
+                                ? existingItems.measures.reduce(
+                                      (last, current) => {
+                                          if (
+                                              current.startBeat.position >
+                                              last.startBeat.position
+                                          ) {
+                                              return current;
+                                          } else if (
+                                              current.startBeat.position ===
+                                              last.startBeat.position
+                                          ) {
+                                              // When positions are equal, prefer the one that appears later in the array
+                                              return current;
+                                          } else {
+                                              return last;
+                                          }
+                                      },
+                                      existingItems.measures[0],
+                                  )
+                                : undefined;
+
+                        if (lastMeasure && lastMeasure.isGhost) {
+                            expect(modifiedMeasureArgs).toHaveLength(1);
+                            expect(modifiedMeasureArgs[0].id).toBe(
+                                lastMeasure.id,
+                            );
+                            expect(modifiedMeasureArgs[0].is_ghost).toBe(0);
+                        }
+
+                        // Property 2: Number of new measures should match numOfRepeats (plus ghost measure)
+                        // When replacing a ghost measure, we create numOfRepeats - 1 new measures (since first repeat replaces ghost) plus 1 ghost
+                        // When not replacing, we create numOfRepeats new measures (all repeats) plus 1 ghost
+                        const expectedNewMeasures =
+                            lastMeasure && lastMeasure.isGhost
+                                ? numOfRepeats // numOfRepeats - 1 for repeats + 1 for ghost = numOfRepeats total
+                                : numOfRepeats + 1; // Regular case: all repeats plus ghost
+                        expect(newMeasureArgs).toHaveLength(
+                            expectedNewMeasures,
+                        );
+
+                        // Property 3: Last new measure should always be a ghost
+                        const lastNewMeasure =
+                            newMeasureArgs[newMeasureArgs.length - 1];
+                        expect(lastNewMeasure.is_ghost).toBe(1);
+
+                        // Property 4: Start beats should be from createdBeats at correct intervals
+                        // When replacing a ghost measure, the first new measure starts at the second repeat's beat
+                        const startIndex =
+                            lastMeasure && lastMeasure.isGhost ? 1 : 0;
+                        for (let i = 0; i < newMeasureArgs.length - 1; i++) {
+                            // -1 to exclude ghost measure
+                            const expectedStartBeat =
+                                createdBeats[
+                                    (startIndex + i) * bigBeatsPerMeasure
+                                ].id;
+                            expect(newMeasureArgs[i].start_beat).toBe(
+                                expectedStartBeat,
+                            );
+                        }
+
+                        // Property 5: Ghost measure should start at the last beat
+                        const lastBeat = createdBeats[createdBeats.length - 1];
+                        expect(lastNewMeasure.start_beat).toBe(lastBeat.id);
+
+                        // Property 6: If no existing measures or last measure is not ghost, no modifications
+                        if (
+                            !existingItems.measures.length ||
+                            !lastMeasure?.isGhost
+                        ) {
+                            expect(modifiedMeasureArgs).toHaveLength(0);
+                        }
+
+                        return true; // Property holds
+                    },
+                ),
+                { numRuns: 100 },
+            );
         });
     });
 });
@@ -3528,515 +3791,265 @@ describe("getLastBeatOfTempoGroup", () => {
     });
 });
 
-describeDbTests("Create without measures", (it) => {
-    const testWithHistory = getTestWithHistory(it, [
-        schema.beats,
-        schema.measures,
-        schema.pages,
-    ]);
-
-    describe("createBeatsWithOneMeasure", () => {
-        testWithHistory(
-            "should create beats and one measure with first beat",
-            async ({ db }) => {
-                const newBeats: NewBeatArgs[] = [
-                    { duration: 0.5, include_in_measure: true },
-                    { duration: 0.5, include_in_measure: true },
-                    { duration: 0.5, include_in_measure: true },
-                ];
-                const startingPosition = 0;
-
-                await _createBeatsWithOneMeasure({
-                    newBeats,
-                    startingPosition,
-                });
-
-                const beats = await getBeats({ db });
-                const measures = await getMeasures({ db });
-
-                // +1 for the FIRST_BEAT
-                expect(beats).toHaveLength(newBeats.length + 1);
-                expect(measures).toHaveLength(1);
-
-                // Skip first beat (FIRST_BEAT) and verify created beats
-                const createdBeats = beats.slice(1);
-                createdBeats.forEach((beat, index) => {
-                    expect(beat.duration).toBe(0.5);
-                    expect(beat.include_in_measure).toBe(true);
-                    expect(beat.position).toBe(index + 1); // positions start at 1 after FIRST_BEAT
-                });
-
-                // Verify measure was created with first created beat (not FIRST_BEAT)
-                expect(measures[0].start_beat).toBe(createdBeats[0].id);
-                expect(measures[0].rehearsal_mark).toBeNull();
-            },
-        );
-
-        testWithHistory(
-            "should create beats and one measure with custom name",
-            async ({ db }) => {
-                const newBeats: NewBeatArgs[] = [
-                    { duration: 0.6, include_in_measure: true },
-                ];
-                const startingPosition = 10;
-                const name = "Test Measure";
-
-                await _createBeatsWithOneMeasure({
-                    newBeats,
-                    startingPosition,
-                    name,
-                });
-
-                const beats = await getBeats({ db });
-                const measures = await getMeasures({ db });
-
-                // +1 for the FIRST_BEAT
-                expect(beats).toHaveLength(newBeats.length + 1);
-                expect(measures).toHaveLength(1);
-
-                // Verify created beat starts at position after startingPosition
-                expect(beats[1].position).toBe(11); // position after startingPosition
-
-                // Verify measure has the custom name
-                expect(measures[0].rehearsal_mark).toBe("Test Measure");
-            },
-        );
-
-        testWithHistory(
-            "should create beats with varying durations",
-            async ({ db }) => {
-                const newBeats: NewBeatArgs[] = [
-                    { duration: 0.5, include_in_measure: true },
-                    { duration: 0.75, include_in_measure: true },
-                ];
-                const startingPosition = 5;
-
-                await _createBeatsWithOneMeasure({
-                    newBeats,
-                    startingPosition,
-                });
-
-                const beats = await getBeats({ db });
-                const measures = await getMeasures({ db });
-
-                // +1 for the FIRST_BEAT
-                expect(beats).toHaveLength(newBeats.length + 1);
-                expect(beats[1].duration).toBe(0.5);
-                expect(beats[2].duration).toBe(0.75);
-
-                expect(measures).toHaveLength(1);
-            },
-        );
-
-        testWithHistory("should handle single beat", async ({ db }) => {
-            const newBeats: NewBeatArgs[] = [
-                { duration: 1.0, include_in_measure: true },
-            ];
-            const startingPosition = 0;
-
-            await _createBeatsWithOneMeasure({
-                newBeats,
-                startingPosition,
+describe("tempoGroupForNoMeasures", () => {
+    describe("from seconds", () => {
+        it("should create a tempo group from seconds", () => {
+            const tempoGroup = tempoGroupForNoMeasures({
+                numberOfBeats: 10,
+                totalDurationSeconds: 5,
             });
+            expect(tempoGroup.tempo).toBe(120);
+            expect(tempoGroup.numOfRepeats).toBe(1);
+            expect(tempoGroup.bigBeatsPerMeasure).toBe(10);
+            expect(tempoGroup.type).toBe("ghost");
+            expect(tempoGroup.name).toBe("");
+        });
+        it("broad tests", () => {
+            fc.assert(
+                fc.property(
+                    fc.record({
+                        numberOfBeats: fc.integer({ min: 1 }),
+                        name: fc.option(fc.string(), { nil: undefined }),
+                        totalDurationSeconds: fc.float({
+                            min: Math.fround(0.00001),
+                        }),
+                    }),
+                    (args) => {
+                        const tempoGroup = tempoGroupForNoMeasures(args);
 
-            const beats = await getBeats({ db });
-            const measures = await getMeasures({ db });
+                        expect(tempoGroup.name).toEqual(
+                            args.name == null ? "" : args.name,
+                        );
+                        expect(tempoGroup.tempo).toBe(
+                            (args.numberOfBeats / args.totalDurationSeconds) *
+                                60,
+                        );
+                        expect(tempoGroup.type).toEqual("ghost");
+                        expect(tempoGroup.numOfRepeats).toBe(1);
+                        expect(tempoGroup.bigBeatsPerMeasure).toBe(
+                            args.numberOfBeats,
+                        );
+                    },
+                ),
+            );
+        });
+    });
+    describe("from tempo", () => {
+        it("should create a tempo group from seconds", () => {
+            const tempoGroup = tempoGroupForNoMeasures({
+                numberOfBeats: 10,
+                tempoBpm: 120,
+            });
+            expect(tempoGroup.tempo).toBe(120);
+            expect(tempoGroup.numOfRepeats).toBe(1);
+            expect(tempoGroup.bigBeatsPerMeasure).toBe(10);
+            expect(tempoGroup.type).toBe("ghost");
+            expect(tempoGroup.name).toBe("");
+        });
+        it("broad tests", () => {
+            fc.assert(
+                fc.property(
+                    fc.record({
+                        numberOfBeats: fc.integer({ min: 1 }),
+                        name: fc.option(fc.string(), { nil: undefined }),
+                        tempoBpm: fc.integer({ min: 1 }),
+                    }),
+                    (args) => {
+                        const tempoGroup = tempoGroupForNoMeasures(args);
 
-            // +1 for the FIRST_BEAT
-            expect(beats).toHaveLength(newBeats.length + 1);
-            expect(measures).toHaveLength(1);
-            // Measure should start with the created beat (not FIRST_BEAT)
-            expect(measures[0].start_beat).toBe(beats[1].id);
+                        expect(tempoGroup.name).toEqual(
+                            args.name == null ? "" : args.name,
+                        );
+                        expect(tempoGroup.tempo).toBe(args.tempoBpm);
+                        expect(tempoGroup.type).toEqual("ghost");
+                        expect(tempoGroup.numOfRepeats).toBe(1);
+                        expect(tempoGroup.bigBeatsPerMeasure).toBe(
+                            args.numberOfBeats,
+                        );
+                    },
+                ),
+            );
+        });
+    });
+});
+
+describe("_lastMeasureIsGhost", () => {
+    // Helper function to create a mock beat for these tests
+    const createBeat = (id: number, position: number): Beat => ({
+        id,
+        position,
+        duration: 0.5,
+        includeInMeasure: true,
+        notes: null,
+        index: 0,
+        timestamp: position,
+    });
+
+    // Helper function to create a mock measure for these tests
+    const createMeasure = (
+        id: number,
+        isGhost: boolean,
+        beatPosition: number,
+    ): Pick<Measure, "id" | "isGhost" | "startBeat"> => ({
+        id,
+        isGhost,
+        startBeat: createBeat(id, beatPosition),
+    });
+
+    describe("base examples", () => {
+        it("should return true when the last measure is a ghost measure", () => {
+            const existingItems = {
+                measures: [
+                    createMeasure(1, false, 0),
+                    createMeasure(2, false, 10),
+                    createMeasure(3, true, 20), // Last by position, is ghost
+                ],
+                beats: [createBeat(1, 0), createBeat(2, 10), createBeat(3, 20)],
+            };
+
+            expect(_lastMeasureIsGhost({ existingItems })).toBe(true);
+        });
+
+        it("should return false when the last measure is not a ghost measure", () => {
+            const existingItems = {
+                measures: [
+                    createMeasure(1, false, 0),
+                    createMeasure(2, true, 10), // Ghost but not last
+                    createMeasure(3, false, 20), // Last by position, not ghost
+                ],
+                beats: [createBeat(1, 0), createBeat(2, 10), createBeat(3, 20)],
+            };
+
+            expect(_lastMeasureIsGhost({ existingItems })).toBe(false);
+        });
+
+        it("should return correct value when measures are out of order in array", () => {
+            const existingItems = {
+                measures: [
+                    createMeasure(2, false, 20), // Actually second by position
+                    createMeasure(1, false, 0), // Actually first by position
+                    createMeasure(3, true, 30), // Last by position, is ghost
+                ],
+                beats: [createBeat(1, 0), createBeat(2, 20), createBeat(3, 30)],
+            };
+
+            expect(_lastMeasureIsGhost({ existingItems })).toBe(true);
+        });
+
+        it("should handle single measure that is ghost", () => {
+            const existingItems = {
+                measures: [createMeasure(1, true, 0)],
+                beats: [createBeat(1, 0)],
+            };
+
+            expect(_lastMeasureIsGhost({ existingItems })).toBe(true);
+        });
+
+        it("should handle single measure that is not ghost", () => {
+            const existingItems = {
+                measures: [createMeasure(1, false, 0)],
+                beats: [createBeat(1, 0)],
+            };
+
+            expect(_lastMeasureIsGhost({ existingItems })).toBe(false);
         });
     });
 
-    describe("_createWithoutMeasures", () => {
-        describe("seconds mode", () => {
-            testWithHistory(
-                "should create beats with total duration distributed evenly",
-                async ({ db }) => {
-                    const startingPosition = 0;
-                    const numberOfBeats = 4;
-                    const totalDurationSeconds = 2.0;
+    describe("property-based tests", () => {
+        // Arbitrary for generating a measure with minimal required fields
+        const arbMinimalMeasure = fc.record({
+            id: fc.integer({ min: 1 }),
+            isGhost: fc.boolean(),
+            beatPosition: fc.float({ min: 0, max: 1000, noNaN: true }),
+        });
 
-                    await _createWithoutMeasures({
-                        startingPosition,
-                        numberOfBeats,
-                        totalDurationSeconds,
-                    });
+        it("should always return the isGhost value of the measure with highest startBeat.position", () => {
+            fc.assert(
+                fc.property(
+                    fc
+                        .array(arbMinimalMeasure, {
+                            minLength: 1,
+                            maxLength: 20,
+                        })
+                        .map((measures) => {
+                            // Ensure positions are unique by adding index
+                            return measures.map((m, idx) => ({
+                                ...m,
+                                beatPosition: m.beatPosition + idx * 1000,
+                            }));
+                        }),
+                    (measures) => {
+                        const existingItems = {
+                            measures: measures.map((m) =>
+                                createMeasure(m.id, m.isGhost, m.beatPosition),
+                            ),
+                            beats: measures.map((m) =>
+                                createBeat(m.id, m.beatPosition),
+                            ),
+                        };
 
-                    const beats = await getBeats({ db });
-                    const measures = await getMeasures({ db });
+                        const result = _lastMeasureIsGhost({ existingItems });
 
-                    // +1 for the FIRST_BEAT at position 0
-                    expect(beats).toHaveLength(numberOfBeats + 1);
-                    expect(measures).toHaveLength(1);
+                        // Find the measure with the highest position manually
+                        const lastMeasure = measures.reduce((last, current) =>
+                            current.beatPosition > last.beatPosition
+                                ? current
+                                : last,
+                        );
 
-                    // Skip first beat (FIRST_BEAT) and check created beats
-                    const createdBeats = beats.slice(1);
-                    const expectedDuration =
-                        totalDurationSeconds / numberOfBeats;
-                    createdBeats.forEach((beat) => {
-                        expect(beat.duration).toBe(expectedDuration);
-                    });
-
-                    // Verify total duration of created beats
-                    const totalDuration = createdBeats.reduce(
-                        (sum, beat) => sum + beat.duration,
-                        0,
-                    );
-                    expect(totalDuration).toBeCloseTo(totalDurationSeconds, 10);
-                },
-            );
-
-            testWithHistory(
-                "should create beats with custom name",
-                async ({ db }) => {
-                    const startingPosition = 0;
-                    const numberOfBeats = 3;
-                    const totalDurationSeconds = 3.0;
-                    const name = "Intro";
-
-                    await _createWithoutMeasures({
-                        startingPosition,
-                        numberOfBeats,
-                        name,
-                        totalDurationSeconds,
-                    });
-
-                    const beats = await getBeats({ db });
-                    const measures = await getMeasures({ db });
-
-                    // +1 for the FIRST_BEAT
-                    expect(beats).toHaveLength(numberOfBeats + 1);
-                    expect(measures).toHaveLength(1);
-                    expect(measures[0].rehearsal_mark).toBe("Intro");
-
-                    // Skip first beat and check created beats - each should be 1 second
-                    const createdBeats = beats.slice(1);
-                    createdBeats.forEach((beat) => {
-                        expect(beat.duration).toBe(1.0);
-                    });
-                },
-            );
-
-            testWithHistory(
-                "should handle single beat with total duration",
-                async ({ db }) => {
-                    const startingPosition = 0;
-                    const numberOfBeats = 1;
-                    const totalDurationSeconds = 2.5;
-
-                    await _createWithoutMeasures({
-                        startingPosition,
-                        numberOfBeats,
-                        totalDurationSeconds,
-                    });
-
-                    const beats = await getBeats({ db });
-                    const measures = await getMeasures({ db });
-
-                    // +1 for the FIRST_BEAT
-                    expect(beats).toHaveLength(numberOfBeats + 1);
-                    expect(measures).toHaveLength(1);
-                    // The second beat (index 1) should have duration 2.5
-                    expect(beats[1].duration).toBe(2.5);
-                },
-            );
-
-            testWithHistory(
-                "should handle many beats with small durations",
-                async ({ db }) => {
-                    const startingPosition = 0;
-                    const numberOfBeats = 16;
-                    const totalDurationSeconds = 4.0;
-
-                    await _createWithoutMeasures({
-                        startingPosition,
-                        numberOfBeats,
-                        totalDurationSeconds,
-                    });
-
-                    const beats = await getBeats({ db });
-                    const measures = await getMeasures({ db });
-
-                    // +1 for the FIRST_BEAT
-                    expect(beats).toHaveLength(numberOfBeats + 1);
-                    expect(measures).toHaveLength(1);
-
-                    // Skip first beat and check created beats
-                    const createdBeats = beats.slice(1);
-                    createdBeats.forEach((beat) => {
-                        expect(beat.duration).toBe(0.25);
-                    });
-                },
-            );
-
-            testWithHistory(
-                "should create beats starting at non-zero position",
-                async ({ db }) => {
-                    const startingPosition = 100;
-                    const numberOfBeats = 2;
-                    const totalDurationSeconds = 1.0;
-
-                    await _createWithoutMeasures({
-                        startingPosition,
-                        numberOfBeats,
-                        totalDurationSeconds,
-                    });
-
-                    const beats = await getBeats({ db });
-
-                    // +1 for the FIRST_BEAT
-                    expect(beats).toHaveLength(numberOfBeats + 1);
-                    // Skip first beat and check positions
-                    expect(beats[1].position).toBe(101); // position after startingPosition
-                    expect(beats[2].position).toBe(102);
-                },
+                        expect(result).toBe(lastMeasure.isGhost);
+                    },
+                ),
             );
         });
 
-        describe("tempo mode", () => {
-            testWithHistory(
-                "should create beats at 120 BPM",
-                async ({ db }) => {
-                    const startingPosition = 0;
-                    const numberOfBeats = 4;
-                    const tempoBpm = 120;
+        it("should return the same value when measures are in any order", () => {
+            fc.assert(
+                fc.property(
+                    fc
+                        .array(arbMinimalMeasure, {
+                            minLength: 1,
+                            maxLength: 20,
+                        })
+                        .map((measures) => {
+                            // Ensure positions are unique by adding index
+                            return measures.map((m, idx) => ({
+                                ...m,
+                                beatPosition: m.beatPosition + idx * 1000,
+                            }));
+                        }),
+                    (measures) => {
+                        const existingItemsInOrder = {
+                            measures: measures.map((m) =>
+                                createMeasure(m.id, m.isGhost, m.beatPosition),
+                            ),
+                            beats: measures.map((m) =>
+                                createBeat(m.id, m.beatPosition),
+                            ),
+                        };
 
-                    await _createWithoutMeasures({
-                        startingPosition,
-                        numberOfBeats,
-                        tempoBpm,
-                    });
+                        // Create a shuffled version
+                        const shuffled = [...measures].reverse();
+                        const existingItemsShuffled = {
+                            measures: shuffled.map((m) =>
+                                createMeasure(m.id, m.isGhost, m.beatPosition),
+                            ),
+                            beats: shuffled.map((m) =>
+                                createBeat(m.id, m.beatPosition),
+                            ),
+                        };
 
-                    const beats = await getBeats({ db });
-                    const measures = await getMeasures({ db });
+                        const resultInOrder = _lastMeasureIsGhost({
+                            existingItems: existingItemsInOrder,
+                        });
+                        const resultShuffled = _lastMeasureIsGhost({
+                            existingItems: existingItemsShuffled,
+                        });
 
-                    // +1 for the FIRST_BEAT
-                    expect(beats).toHaveLength(numberOfBeats + 1);
-                    expect(measures).toHaveLength(1);
-
-                    // Skip first beat and check created beats
-                    const createdBeats = beats.slice(1);
-                    const expectedDuration = 60 / tempoBpm;
-                    createdBeats.forEach((beat) => {
-                        expect(beat.duration).toBe(expectedDuration);
-                    });
-                },
-            );
-
-            testWithHistory(
-                "should create beats at 180 BPM",
-                async ({ db }) => {
-                    const startingPosition = 0;
-                    const numberOfBeats = 8;
-                    const tempoBpm = 180;
-
-                    await _createWithoutMeasures({
-                        startingPosition,
-                        numberOfBeats,
-                        tempoBpm,
-                    });
-
-                    const beats = await getBeats({ db });
-
-                    // +1 for the FIRST_BEAT
-                    expect(beats).toHaveLength(numberOfBeats + 1);
-
-                    // Skip first beat and check created beats
-                    const createdBeats = beats.slice(1);
-                    const expectedDuration = 60 / tempoBpm;
-                    createdBeats.forEach((beat) => {
-                        expect(beat.duration).toBeCloseTo(expectedDuration, 10);
-                    });
-                },
-            );
-
-            testWithHistory(
-                "should create beats at 60 BPM (slow tempo)",
-                async ({ db }) => {
-                    const startingPosition = 0;
-                    const numberOfBeats = 4;
-                    const tempoBpm = 60;
-
-                    await _createWithoutMeasures({
-                        startingPosition,
-                        numberOfBeats,
-                        tempoBpm,
-                    });
-
-                    const beats = await getBeats({ db });
-
-                    // +1 for the FIRST_BEAT
-                    expect(beats).toHaveLength(numberOfBeats + 1);
-
-                    // Skip first beat and check created beats
-                    const createdBeats = beats.slice(1);
-                    createdBeats.forEach((beat) => {
-                        expect(beat.duration).toBe(1.0);
-                    });
-                },
-            );
-
-            testWithHistory(
-                "should create beats at 240 BPM (fast tempo)",
-                async ({ db }) => {
-                    const startingPosition = 0;
-                    const numberOfBeats = 4;
-                    const tempoBpm = 240;
-
-                    await _createWithoutMeasures({
-                        startingPosition,
-                        numberOfBeats,
-                        tempoBpm,
-                    });
-
-                    const beats = await getBeats({ db });
-
-                    // +1 for the FIRST_BEAT
-                    expect(beats).toHaveLength(numberOfBeats + 1);
-
-                    // Skip first beat and check created beats
-                    const createdBeats = beats.slice(1);
-                    createdBeats.forEach((beat) => {
-                        expect(beat.duration).toBe(0.25);
-                    });
-                },
-            );
-
-            testWithHistory(
-                "should create beats with custom name",
-                async ({ db }) => {
-                    const startingPosition = 0;
-                    const numberOfBeats = 3;
-                    const tempoBpm = 100;
-                    const name = "Verse 1";
-
-                    await _createWithoutMeasures({
-                        startingPosition,
-                        numberOfBeats,
-                        tempoBpm,
-                        name,
-                    });
-
-                    const beats = await getBeats({ db });
-                    const measures = await getMeasures({ db });
-
-                    // +1 for the FIRST_BEAT
-                    expect(beats).toHaveLength(numberOfBeats + 1);
-                    expect(measures).toHaveLength(1);
-                    expect(measures[0].rehearsal_mark).toBe("Verse 1");
-
-                    // Skip first beat and check created beats
-                    const createdBeats = beats.slice(1);
-                    createdBeats.forEach((beat) => {
-                        expect(beat.duration).toBe(0.6);
-                    });
-                },
-            );
-
-            testWithHistory(
-                "should create single beat at given tempo",
-                async ({ db }) => {
-                    const startingPosition = 0;
-                    const numberOfBeats = 1;
-                    const tempoBpm = 90;
-
-                    await _createWithoutMeasures({
-                        startingPosition,
-                        numberOfBeats,
-                        tempoBpm,
-                    });
-
-                    const beats = await getBeats({ db });
-                    const measures = await getMeasures({ db });
-
-                    // +1 for the FIRST_BEAT
-                    expect(beats).toHaveLength(numberOfBeats + 1);
-                    expect(measures).toHaveLength(1);
-
-                    // Check the created beat (index 1)
-                    expect(beats[1].duration).toBeCloseTo(60 / 90, 10);
-                },
-            );
-
-            testWithHistory(
-                "should create many beats at given tempo",
-                async ({ db }) => {
-                    const startingPosition = 0;
-                    const numberOfBeats = 32;
-                    const tempoBpm = 140;
-
-                    await _createWithoutMeasures({
-                        startingPosition,
-                        numberOfBeats,
-                        tempoBpm,
-                    });
-
-                    const beats = await getBeats({ db });
-
-                    // +1 for the FIRST_BEAT
-                    expect(beats).toHaveLength(numberOfBeats + 1);
-
-                    // Skip first beat and check created beats
-                    const createdBeats = beats.slice(1);
-                    const expectedDuration = 60 / tempoBpm;
-                    createdBeats.forEach((beat) => {
-                        expect(beat.duration).toBeCloseTo(expectedDuration, 10);
-                    });
-                },
-            );
-
-            testWithHistory(
-                "should create beats starting at non-zero position",
-                async ({ db }) => {
-                    const startingPosition = 50;
-                    const numberOfBeats = 3;
-                    const tempoBpm = 120;
-
-                    await _createWithoutMeasures({
-                        startingPosition,
-                        numberOfBeats,
-                        tempoBpm,
-                    });
-
-                    const beats = await getBeats({ db });
-
-                    // +1 for the FIRST_BEAT
-                    expect(beats).toHaveLength(numberOfBeats + 1);
-                    // Skip first beat and check positions
-                    expect(beats[1].position).toBe(51); // position after startingPosition
-                    expect(beats[2].position).toBe(52);
-                    expect(beats[3].position).toBe(53);
-                },
-            );
-
-            testWithHistory(
-                "should handle floating point tempo",
-                async ({ db }) => {
-                    const startingPosition = 0;
-                    const numberOfBeats = 4;
-                    const tempoBpm = 132.5;
-
-                    await _createWithoutMeasures({
-                        startingPosition,
-                        numberOfBeats,
-                        tempoBpm,
-                    });
-
-                    const beats = await getBeats({ db });
-
-                    // +1 for the FIRST_BEAT
-                    expect(beats).toHaveLength(numberOfBeats + 1);
-
-                    // Skip first beat and check created beats
-                    const createdBeats = beats.slice(1);
-                    const expectedDuration = 60 / tempoBpm;
-                    createdBeats.forEach((beat) => {
-                        expect(beat.duration).toBeCloseTo(expectedDuration, 10);
-                    });
-                },
+                        expect(resultInOrder).toBe(resultShuffled);
+                    },
+                ),
+                { verbose: 2 },
             );
         });
     });

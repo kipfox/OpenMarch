@@ -2,8 +2,8 @@ import {
     TempoGroup,
     getStrongBeatIndexesFromPattern,
     splitPatternString,
+    tempoGroupForNoMeasures,
     useCreateFromTempoGroup,
-    useCreateWithoutMeasures,
 } from "@/components/music/TempoGroup/TempoGroup";
 import {
     Input,
@@ -17,11 +17,12 @@ import { InfoIcon } from "@phosphor-icons/react";
 import { Form, FormField, Label } from "@radix-ui/react-form";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import clsx from "clsx";
-import React, { useEffect, useMemo } from "react";
+import React, { useCallback, useEffect, useMemo } from "react";
 import { mixedMeterPermutations } from "./TempoUtils";
 import { T, useTolgee } from "@tolgee/react";
 import { useQuery } from "@tanstack/react-query";
 import { getUtilityQueryOptions } from "@/hooks/queries";
+import { useTimingObjects } from "@/hooks";
 export const maxMixedMeterBeats = 30;
 
 interface NewTempoGroupFormProps {
@@ -57,9 +58,23 @@ const NewTempoGroupForm = React.forwardRef<
         }
     }, [props]);
 
+    const { beats, measures } = useTimingObjects();
     const { mutate: createFromTempoGroup } = useCreateFromTempoGroup(callback);
-    const { mutate: createWithoutMeasures } =
-        useCreateWithoutMeasures(callback);
+    const createWithoutMeasures = useCallback(
+        (
+            args: Parameters<typeof tempoGroupForNoMeasures>[0] & {
+                startingPosition: number;
+            },
+        ) => {
+            const tempoGroup = tempoGroupForNoMeasures(args);
+            createFromTempoGroup({
+                tempoGroup,
+                startingPosition: args.startingPosition,
+                existingItems: { measures, beats },
+            });
+        },
+        [createFromTempoGroup, measures, beats],
+    );
     const subTextClass = clsx("text-text-subtitle text-sub ");
 
     // Main mode selection
@@ -173,6 +188,7 @@ const NewTempoGroupForm = React.forwardRef<
                 tempoGroup: newTempoGroup,
                 endTempo: endTempoValue,
                 startingPosition,
+                existingItems: { measures, beats },
             });
         } else {
             // without-measures mode
