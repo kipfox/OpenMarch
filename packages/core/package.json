@@ -29,6 +29,7 @@
     ],
     "devDependencies": {
         "@openmarch/config": "workspace:*",
+        "faker-js": "^1.0.0",
         "tsup": "^8.5.0",
         "typescript": "latest",
         "vitest": "^2.1.9"

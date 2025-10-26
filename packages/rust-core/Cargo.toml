@@ -1,0 +1,14 @@
+[package]
+name = "rust-core"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "basic-parse"
+path = "src/basic-parse.rs"
+
+[dependencies]
+flo_curves = "0.8.0"
+lyon_path = "1.0.16"
+lyon_svg = "0.17.2"
+svgtypes = "0.15.3"
