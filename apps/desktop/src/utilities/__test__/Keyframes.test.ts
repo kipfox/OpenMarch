@@ -1,6 +1,8 @@
+import fc from "fast-check";
 import { describe, expect, it, beforeEach } from "vitest";
 import {
     CoordinateDefinition,
+    getAnimationFrames,
     getCoordinatesAtTime,
     MarcherTimeline,
 } from "../Keyframes";
@@ -879,5 +881,403 @@ describe("getCoordinatesAtTime", () => {
                 ).toBeInstanceOf(Spline);
             });
         });
+    });
+});
+
+describe("getAnimationFrames", () => {
+    it("creates frames for a simple timeline with two keyframes @60fs", () => {
+        const frameRate = 60;
+
+        const pathMap = new Map<number, CoordinateDefinition>();
+        const coord1 = { x: 0, y: 0 };
+        const coord2 = { x: 100, y: 100 };
+        pathMap.set(0, coord1);
+        pathMap.set(1000, coord2);
+        const marcherTimeline: MarcherTimeline = {
+            pathMap,
+            sortedTimestamps: [0, 1000],
+        };
+
+        const frames = getAnimationFrames({ marcherTimeline, frameRate });
+
+        expect(frames.length).toBeGreaterThanOrEqual(frameRate);
+        expect(frames.length).toBeLessThanOrEqual(frameRate + 1);
+
+        frames.forEach((coordinate, index) => {
+            // Calculate the timestamp for this frame
+            const timestamp = index * (1000 / frameRate);
+
+            // Calculate expected linear interpolation
+            const progress = timestamp / 1000;
+            const expectedX = coord1.x + progress * (coord2.x - coord1.x);
+            const expectedY = coord1.y + progress * (coord2.y - coord1.y);
+
+            // Verify the interpolated coordinates
+            expect(coordinate.x).toBeCloseTo(expectedX, 5);
+            expect(coordinate.y).toBeCloseTo(expectedY, 5);
+        });
+    });
+
+    it("creates frames for a simple timeline with two keyframes at many frame-rates", () => {
+        const pathMap = new Map<number, CoordinateDefinition>();
+        const coord1 = { x: 0, y: 0 };
+        const coord2 = { x: 100, y: 100 };
+        pathMap.set(0, coord1);
+        pathMap.set(1000, coord2);
+        const marcherTimeline: MarcherTimeline = {
+            pathMap,
+            sortedTimestamps: [0, 1000],
+        };
+
+        fc.assert(
+            fc.property(fc.integer({ min: 1, max: 2000 }), (frameRate) => {
+                const frames = getAnimationFrames({
+                    marcherTimeline,
+                    frameRate,
+                });
+                expect(frames.length).toBeGreaterThanOrEqual(frameRate);
+                expect(frames.length).toBeLessThanOrEqual(frameRate + 1);
+
+                frames.forEach((coordinate, index) => {
+                    // Calculate the timestamp for this frame
+                    const timestamp = index * (1000 / frameRate);
+
+                    // Calculate expected linear interpolation
+                    const progress = timestamp / 1000;
+                    const expectedX =
+                        coord1.x + progress * (coord2.x - coord1.x);
+                    const expectedY =
+                        coord1.y + progress * (coord2.y - coord1.y);
+
+                    // Verify the interpolated coordinates
+                    expect(coordinate.x).toBeCloseTo(expectedX, 5);
+                    expect(coordinate.y).toBeCloseTo(expectedY, 5);
+                });
+            }),
+        );
+    });
+
+    it("creates frames for a timeline with multiple keyframes @60fps", () => {
+        const frameRate = 60;
+
+        const pathMap = new Map<number, CoordinateDefinition>();
+        const coords = [
+            { x: 0, y: 0 },
+            { x: 50, y: 100 },
+            { x: 150, y: 50 },
+            { x: 200, y: 200 },
+        ];
+        const timestamps = [0, 500, 1500, 2000];
+
+        coords.forEach((coord, index) => {
+            pathMap.set(timestamps[index], coord);
+        });
+
+        const marcherTimeline: MarcherTimeline = {
+            pathMap,
+            sortedTimestamps: timestamps,
+        };
+
+        const frames = getAnimationFrames({ marcherTimeline, frameRate });
+
+        // 2 seconds at 60fps = 120 frames
+        expect(frames.length).toBeGreaterThanOrEqual(120);
+        expect(frames.length).toBeLessThanOrEqual(121);
+
+        frames.forEach((coordinate, index) => {
+            const startTime = timestamps[0];
+            const timestamp = startTime + index * (1000 / frameRate);
+
+            // Find which segment this frame belongs to
+            let segmentIndex = timestamps.length - 2; // Default to last segment
+            for (let i = 0; i < timestamps.length - 1; i++) {
+                if (
+                    timestamp >= timestamps[i] &&
+                    timestamp < timestamps[i + 1]
+                ) {
+                    segmentIndex = i;
+                    break;
+                }
+            }
+
+            const startTimestamp = timestamps[segmentIndex];
+            const endTimestamp = timestamps[segmentIndex + 1];
+            const startCoord = coords[segmentIndex];
+            const endCoord = coords[segmentIndex + 1];
+
+            // Calculate expected linear interpolation for this segment
+            const progress =
+                (timestamp - startTimestamp) / (endTimestamp - startTimestamp);
+            const expectedX =
+                startCoord.x + progress * (endCoord.x - startCoord.x);
+            const expectedY =
+                startCoord.y + progress * (endCoord.y - startCoord.y);
+
+            expect(coordinate.x).toBeCloseTo(expectedX, 5);
+            expect(coordinate.y).toBeCloseTo(expectedY, 5);
+        });
+    });
+
+    it("creates frames for a timeline with many keyframes at various frame rates", () => {
+        fc.assert(
+            fc.property(
+                fc.integer({ min: 1, max: 500 }),
+                fc.integer({ min: 3, max: 20 }),
+                (frameRate, numKeyframes) => {
+                    const pathMap = new Map<number, CoordinateDefinition>();
+                    const coords: CoordinateDefinition[] = [];
+                    const timestamps: number[] = [];
+
+                    // Generate random keyframes
+                    for (let i = 0; i < numKeyframes; i++) {
+                        const timestamp = i * 1000;
+                        const coord = {
+                            x: Math.random() * 500,
+                            y: Math.random() * 500,
+                        };
+                        timestamps.push(timestamp);
+                        coords.push(coord);
+                        pathMap.set(timestamp, coord);
+                    }
+
+                    const marcherTimeline: MarcherTimeline = {
+                        pathMap,
+                        sortedTimestamps: timestamps,
+                    };
+
+                    const frames = getAnimationFrames({
+                        marcherTimeline,
+                        frameRate,
+                    });
+
+                    const totalDuration =
+                        timestamps[timestamps.length - 1] - timestamps[0];
+                    const expectedFrameCount = Math.floor(
+                        (totalDuration / 1000) * frameRate,
+                    );
+
+                    expect(frames.length).toBeGreaterThanOrEqual(
+                        expectedFrameCount,
+                    );
+                    expect(frames.length).toBeLessThanOrEqual(
+                        expectedFrameCount + 1,
+                    );
+
+                    frames.forEach((coordinate, index) => {
+                        const startTime = timestamps[0];
+                        const timestamp =
+                            startTime + index * (1000 / frameRate);
+
+                        // Find which segment this frame belongs to
+                        let segmentIndex = timestamps.length - 2; // Default to last segment
+                        for (let i = 0; i < timestamps.length - 1; i++) {
+                            if (
+                                timestamp >= timestamps[i] &&
+                                timestamp < timestamps[i + 1]
+                            ) {
+                                segmentIndex = i;
+                                break;
+                            }
+                        }
+
+                        const startTimestamp = timestamps[segmentIndex];
+                        const endTimestamp = timestamps[segmentIndex + 1];
+                        const startCoord = coords[segmentIndex];
+                        const endCoord = coords[segmentIndex + 1];
+
+                        // Calculate expected linear interpolation for this segment
+                        const progress =
+                            (timestamp - startTimestamp) /
+                            (endTimestamp - startTimestamp);
+                        const expectedX =
+                            startCoord.x +
+                            progress * (endCoord.x - startCoord.x);
+                        const expectedY =
+                            startCoord.y +
+                            progress * (endCoord.y - startCoord.y);
+
+                        expect(coordinate.x).toBeCloseTo(expectedX, 5);
+                        expect(coordinate.y).toBeCloseTo(expectedY, 5);
+                    });
+                },
+            ),
+        );
+    });
+
+    it("creates frames for multiple marchers with different paths @60fps", () => {
+        const frameRate = 60;
+
+        // Marcher 1: Simple diagonal movement
+        const pathMap1 = new Map<number, CoordinateDefinition>();
+        pathMap1.set(0, { x: 0, y: 0 });
+        pathMap1.set(1000, { x: 100, y: 100 });
+        const marcherTimeline1: MarcherTimeline = {
+            pathMap: pathMap1,
+            sortedTimestamps: [0, 1000],
+        };
+
+        // Marcher 2: Horizontal then vertical movement
+        const pathMap2 = new Map<number, CoordinateDefinition>();
+        pathMap2.set(0, { x: 0, y: 0 });
+        pathMap2.set(500, { x: 100, y: 0 });
+        pathMap2.set(1000, { x: 100, y: 100 });
+        const marcherTimeline2: MarcherTimeline = {
+            pathMap: pathMap2,
+            sortedTimestamps: [0, 500, 1000],
+        };
+
+        // Marcher 3: Complex path with 5 keyframes
+        const pathMap3 = new Map<number, CoordinateDefinition>();
+        pathMap3.set(0, { x: 50, y: 50 });
+        pathMap3.set(250, { x: 75, y: 25 });
+        pathMap3.set(500, { x: 100, y: 50 });
+        pathMap3.set(750, { x: 75, y: 75 });
+        pathMap3.set(1000, { x: 50, y: 50 });
+        const marcherTimeline3: MarcherTimeline = {
+            pathMap: pathMap3,
+            sortedTimestamps: [0, 250, 500, 750, 1000],
+        };
+
+        const marchers = [marcherTimeline1, marcherTimeline2, marcherTimeline3];
+
+        marchers.forEach((marcherTimeline, marcherIndex) => {
+            const frames = getAnimationFrames({ marcherTimeline, frameRate });
+
+            expect(frames.length).toBeGreaterThanOrEqual(frameRate);
+            expect(frames.length).toBeLessThanOrEqual(frameRate + 1);
+
+            frames.forEach((coordinate, index) => {
+                const timestamps = marcherTimeline.sortedTimestamps;
+                const startTime = timestamps[0];
+                const timestamp = startTime + index * (1000 / frameRate);
+
+                // Find which segment this frame belongs to
+                let segmentIndex = timestamps.length - 2; // Default to last segment
+                for (let i = 0; i < timestamps.length - 1; i++) {
+                    if (
+                        timestamp >= timestamps[i] &&
+                        timestamp < timestamps[i + 1]
+                    ) {
+                        segmentIndex = i;
+                        break;
+                    }
+                }
+
+                const startTimestamp = timestamps[segmentIndex];
+                const endTimestamp = timestamps[segmentIndex + 1];
+                const startCoord = marcherTimeline.pathMap.get(startTimestamp)!;
+                const endCoord = marcherTimeline.pathMap.get(endTimestamp)!;
+
+                // Calculate expected linear interpolation
+                const progress =
+                    (timestamp - startTimestamp) /
+                    (endTimestamp - startTimestamp);
+                const expectedX =
+                    startCoord.x + progress * (endCoord.x - startCoord.x);
+                const expectedY =
+                    startCoord.y + progress * (endCoord.y - startCoord.y);
+
+                expect(coordinate.x).toBeCloseTo(expectedX, 5);
+                expect(coordinate.y).toBeCloseTo(expectedY, 5);
+            });
+        });
+    });
+
+    it("creates frames for many marchers with many keyframes", () => {
+        fc.assert(
+            fc.property(
+                fc.integer({ min: 1, max: 200 }),
+                fc.integer({ min: 2, max: 50 }),
+                fc.integer({ min: 2, max: 10 }),
+                (frameRate, numMarchers, numKeyframes) => {
+                    const marchers: MarcherTimeline[] = [];
+
+                    // Create multiple marchers with different paths
+                    for (let m = 0; m < numMarchers; m++) {
+                        const pathMap = new Map<number, CoordinateDefinition>();
+                        const timestamps: number[] = [];
+
+                        // Generate random keyframes for this marcher
+                        for (let k = 0; k < numKeyframes; k++) {
+                            const timestamp = k * 1000;
+                            const coord = {
+                                x: Math.random() * 500,
+                                y: Math.random() * 500,
+                            };
+                            timestamps.push(timestamp);
+                            pathMap.set(timestamp, coord);
+                        }
+
+                        marchers.push({
+                            pathMap,
+                            sortedTimestamps: timestamps,
+                        });
+                    }
+
+                    // Test each marcher's animation frames
+                    marchers.forEach((marcherTimeline) => {
+                        const frames = getAnimationFrames({
+                            marcherTimeline,
+                            frameRate,
+                        });
+
+                        const totalDuration =
+                            marcherTimeline.sortedTimestamps[
+                                marcherTimeline.sortedTimestamps.length - 1
+                            ] - marcherTimeline.sortedTimestamps[0];
+                        const expectedFrameCount = Math.floor(
+                            (totalDuration / 1000) * frameRate,
+                        );
+
+                        expect(frames.length).toBeGreaterThanOrEqual(
+                            expectedFrameCount,
+                        );
+                        expect(frames.length).toBeLessThanOrEqual(
+                            expectedFrameCount + 1,
+                        );
+
+                        frames.forEach((coordinate, index) => {
+                            const timestamps = marcherTimeline.sortedTimestamps;
+                            const startTime = timestamps[0];
+                            const timestamp =
+                                startTime + index * (1000 / frameRate);
+
+                            // Find which segment this frame belongs to
+                            let segmentIndex = timestamps.length - 2; // Default to last segment
+                            for (let i = 0; i < timestamps.length - 1; i++) {
+                                if (
+                                    timestamp >= timestamps[i] &&
+                                    timestamp < timestamps[i + 1]
+                                ) {
+                                    segmentIndex = i;
+                                    break;
+                                }
+                            }
+
+                            const startTimestamp = timestamps[segmentIndex];
+                            const endTimestamp = timestamps[segmentIndex + 1];
+                            const startCoord =
+                                marcherTimeline.pathMap.get(startTimestamp)!;
+                            const endCoord =
+                                marcherTimeline.pathMap.get(endTimestamp)!;
+
+                            // Calculate expected linear interpolation
+                            const progress =
+                                (timestamp - startTimestamp) /
+                                (endTimestamp - startTimestamp);
+                            const expectedX =
+                                startCoord.x +
+                                progress * (endCoord.x - startCoord.x);
+                            const expectedY =
+                                startCoord.y +
+                                progress * (endCoord.y - startCoord.y);
+
+                            expect(coordinate.x).toBeCloseTo(expectedX, 5);
+                            expect(coordinate.y).toBeCloseTo(expectedY, 5);
+                        });
+                    });
+                },
+            ),
+        );
     });
 });

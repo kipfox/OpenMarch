@@ -1,4 +1,5 @@
 import {
+    QueryClient,
     queryOptions,
     useQueries,
     useQueryClient,
@@ -6,7 +7,11 @@ import {
 } from "@tanstack/react-query";
 import { marcherPagesByPageQueryOptions } from "./useMarcherPages";
 import { Pathway, pathwaysByPageQueryOptions } from "./usePathways";
-import { CoordinateDefinition, MarcherTimeline } from "@/utilities/Keyframes";
+import {
+    CoordinateDefinition,
+    getAnimationFrames,
+    MarcherTimeline,
+} from "@/utilities/Keyframes";
 import { assert } from "@/utilities/utils";
 import { MarcherPagesByMarcher } from "@/global/classes/MarcherPageIndex";
 import { DEFAULT_STALE_TIME } from "./constants";
@@ -122,7 +127,7 @@ const getMarcherTimelines = (
 // --- coordinate data options (pure; no hooks) ---
 export const coordinateDataQueryOptions = (
     page: { id: number; duration: number; timestamp: number },
-    qc: ReturnType<typeof useQueryClient>,
+    qc: QueryClient,
 ) =>
     queryOptions({
         // eslint-disable-next-line @tanstack/query/exhaustive-deps
@@ -211,5 +216,40 @@ export const useManyCoordinateData = (
     return useQueries({
         queries: pages.map((page) => coordinateDataQueryOptions(page, qc)),
         combine: combineQueryResults,
+    });
+};
+
+type AnimationFramesByMarcherId = Map<number, { x: number; y: number }[]>;
+
+export const animationFramesByPage = (
+    page: { id: number; duration: number; timestamp: number },
+    qc: QueryClient,
+    frameRate = 60,
+) => {
+    return queryOptions<AnimationFramesByMarcherId>({
+        // eslint-disable-next-line @tanstack/query/exhaustive-deps
+        queryKey: [
+            ...coordinateDataKeys.byPage(page),
+            "animation_frames",
+            { frameRate },
+        ],
+        queryFn: async () => {
+            const coordinateData = await qc.ensureQueryData(
+                coordinateDataQueryOptions(page, qc),
+            );
+            const framesByMarcherId: AnimationFramesByMarcherId = new Map();
+
+            for (const [marcherId, marcherTimeline] of coordinateData) {
+                const frames = getAnimationFrames({
+                    // startTimestamp: page.timestamp,
+                    marcherTimeline,
+                    frameRate,
+                });
+
+                framesByMarcherId.set(marcherId, frames);
+            }
+
+            return framesByMarcherId;
+        },
     });
 };

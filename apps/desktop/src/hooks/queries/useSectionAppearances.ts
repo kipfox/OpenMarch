@@ -4,7 +4,6 @@ import {
     mutationOptions,
     QueryClient,
 } from "@tanstack/react-query";
-import { queryClient } from "@/App";
 import { conToastError } from "@/utilities/utils";
 import {
     DbConnection,

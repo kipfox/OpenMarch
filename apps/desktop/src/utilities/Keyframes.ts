@@ -107,6 +107,56 @@ export const getCoordinatesAtTime = (
 };
 
 /**
+ * Generate an array of coordinates at regular intervals based on frame rate.
+ *
+ * @param startTimestamp The starting timestamp in milliseconds.
+ * @param marcherTimeline The timeline of coordinates for the marcher.
+ * @param frameRate The number of frames per second.
+ * @returns An array of coordinates from the start timestamp to the end of the timeline.
+ */
+export const getAnimationFrames = ({
+    // startTimestamp,
+    marcherTimeline,
+    frameRate,
+}: {
+    // startTimestamp: number;
+    marcherTimeline: MarcherTimeline;
+    frameRate: number;
+}): Coordinate[] => {
+    // if (startTimestamp < 0)
+    // throw new Error(`Cannot use negative timestamp: ${startTimestamp}`);
+    if (frameRate <= 0)
+        throw new Error(`Frame rate must be positive: ${frameRate}`);
+
+    const coordinates: Coordinate[] = [];
+    const intervalMilliseconds = 1000 / frameRate;
+
+    const startTimestamp = marcherTimeline.sortedTimestamps[0];
+    const endTimestamp =
+        marcherTimeline.sortedTimestamps[
+            marcherTimeline.sortedTimestamps.length - 1
+        ];
+
+    // if (endTimestamp === undefined || startTimestamp > endTimestamp) {
+    //     return coordinates;
+    // }
+
+    // Generate coordinates at each frame interval
+    for (
+        let timestamp = startTimestamp;
+        timestamp < endTimestamp;
+        timestamp += intervalMilliseconds
+    ) {
+        const coordinate = getCoordinatesAtTime(timestamp, marcherTimeline);
+        if (coordinate !== null) {
+            coordinates.push(coordinate);
+        }
+    }
+
+    return coordinates;
+};
+
+/**
  * Binary search algorithm to find the timestamps surrounding a target.
  *
  * @param params.timestamps - Sorted array of timestamps
