@@ -219,14 +219,21 @@ export const useManyCoordinateData = (
     });
 };
 
-type AnimationFramesByMarcherId = Map<number, { x: number; y: number }[]>;
+type AnimationFramesRecord = {
+    frameRate: number;
+    startingTimeStamp: number;
+    frameCollections: {
+        marcherId: number;
+        frames: Float32Array;
+    }[];
+};
 
 export const animationFramesByPage = (
     page: { id: number; duration: number; timestamp: number },
     qc: QueryClient,
     frameRate = 60,
 ) => {
-    return queryOptions<AnimationFramesByMarcherId>({
+    return queryOptions<AnimationFramesRecord>({
         // eslint-disable-next-line @tanstack/query/exhaustive-deps
         queryKey: [
             ...coordinateDataKeys.byPage(page),
@@ -237,7 +244,10 @@ export const animationFramesByPage = (
             const coordinateData = await qc.ensureQueryData(
                 coordinateDataQueryOptions(page, qc),
             );
-            const framesByMarcherId: AnimationFramesByMarcherId = new Map();
+            const frameCollections: {
+                marcherId: number;
+                frames: Float32Array;
+            }[] = [];
 
             for (const [marcherId, marcherTimeline] of coordinateData) {
                 const frames = getAnimationFrames({
@@ -246,10 +256,14 @@ export const animationFramesByPage = (
                     frameRate,
                 });
 
-                framesByMarcherId.set(marcherId, frames);
+                frameCollections.push({ marcherId, frames });
             }
 
-            return framesByMarcherId;
+            return {
+                frameRate,
+                startingTimeStamp: page.timestamp,
+                frameCollections,
+            };
         },
     });
 };

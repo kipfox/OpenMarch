@@ -900,22 +900,25 @@ describe("getAnimationFrames", () => {
 
         const frames = getAnimationFrames({ marcherTimeline, frameRate });
 
-        expect(frames.length).toBeGreaterThanOrEqual(frameRate);
-        expect(frames.length).toBeLessThanOrEqual(frameRate + 1);
+        // frames.length is now total floats (x1, y1, x2, y2...), so divide by 2 for coordinate count
+        const numCoordinates = frames.length / 2;
+        expect(numCoordinates).toBeGreaterThanOrEqual(frameRate);
+        expect(numCoordinates).toBeLessThanOrEqual(frameRate + 1);
 
-        frames.forEach((coordinate, index) => {
+        for (let i = 0; i < numCoordinates; i++) {
             // Calculate the timestamp for this frame
-            const timestamp = index * (1000 / frameRate);
+            const timestamp = i * (1000 / frameRate);
 
             // Calculate expected linear interpolation
             const progress = timestamp / 1000;
             const expectedX = coord1.x + progress * (coord2.x - coord1.x);
             const expectedY = coord1.y + progress * (coord2.y - coord1.y);
 
-            // Verify the interpolated coordinates
-            expect(coordinate.x).toBeCloseTo(expectedX, 5);
-            expect(coordinate.y).toBeCloseTo(expectedY, 5);
-        });
+            // Verify the interpolated coordinates (stored as [x, y, x, y, ...])
+            // Float32Array has slightly less precision, so we use 4 decimal places
+            expect(frames[i * 2]).toBeCloseTo(expectedX, 4);
+            expect(frames[i * 2 + 1]).toBeCloseTo(expectedY, 4);
+        }
     });
 
     it("creates frames for a simple timeline with two keyframes at many frame-rates", () => {
@@ -935,12 +938,13 @@ describe("getAnimationFrames", () => {
                     marcherTimeline,
                     frameRate,
                 });
-                expect(frames.length).toBeGreaterThanOrEqual(frameRate);
-                expect(frames.length).toBeLessThanOrEqual(frameRate + 1);
+                const numCoordinates = frames.length / 2;
+                expect(numCoordinates).toBeGreaterThanOrEqual(frameRate);
+                expect(numCoordinates).toBeLessThanOrEqual(frameRate + 1);
 
-                frames.forEach((coordinate, index) => {
+                for (let i = 0; i < numCoordinates; i++) {
                     // Calculate the timestamp for this frame
-                    const timestamp = index * (1000 / frameRate);
+                    const timestamp = i * (1000 / frameRate);
 
                     // Calculate expected linear interpolation
                     const progress = timestamp / 1000;
@@ -950,9 +954,10 @@ describe("getAnimationFrames", () => {
                         coord1.y + progress * (coord2.y - coord1.y);
 
                     // Verify the interpolated coordinates
-                    expect(coordinate.x).toBeCloseTo(expectedX, 5);
-                    expect(coordinate.y).toBeCloseTo(expectedY, 5);
-                });
+                    // Float32Array has slightly less precision, so we use 4 decimal places
+                    expect(frames[i * 2]).toBeCloseTo(expectedX, 4);
+                    expect(frames[i * 2 + 1]).toBeCloseTo(expectedY, 4);
+                }
             }),
         );
     });
@@ -980,22 +985,23 @@ describe("getAnimationFrames", () => {
 
         const frames = getAnimationFrames({ marcherTimeline, frameRate });
 
-        // 2 seconds at 60fps = 120 frames
-        expect(frames.length).toBeGreaterThanOrEqual(120);
-        expect(frames.length).toBeLessThanOrEqual(121);
+        // 2 seconds at 60fps = 120 frames, * 2 for x,y pairs
+        const numCoordinates = frames.length / 2;
+        expect(numCoordinates).toBeGreaterThanOrEqual(120);
+        expect(numCoordinates).toBeLessThanOrEqual(121);
 
-        frames.forEach((coordinate, index) => {
+        for (let i = 0; i < numCoordinates; i++) {
             const startTime = timestamps[0];
-            const timestamp = startTime + index * (1000 / frameRate);
+            const timestamp = startTime + i * (1000 / frameRate);
 
             // Find which segment this frame belongs to
             let segmentIndex = timestamps.length - 2; // Default to last segment
-            for (let i = 0; i < timestamps.length - 1; i++) {
+            for (let j = 0; j < timestamps.length - 1; j++) {
                 if (
-                    timestamp >= timestamps[i] &&
-                    timestamp < timestamps[i + 1]
+                    timestamp >= timestamps[j] &&
+                    timestamp < timestamps[j + 1]
                 ) {
-                    segmentIndex = i;
+                    segmentIndex = j;
                     break;
                 }
             }
@@ -1013,9 +1019,10 @@ describe("getAnimationFrames", () => {
             const expectedY =
                 startCoord.y + progress * (endCoord.y - startCoord.y);
 
-            expect(coordinate.x).toBeCloseTo(expectedX, 5);
-            expect(coordinate.y).toBeCloseTo(expectedY, 5);
-        });
+            // Float32Array has slightly less precision, so we use 4 decimal places
+            expect(frames[i * 2]).toBeCloseTo(expectedX, 4);
+            expect(frames[i * 2 + 1]).toBeCloseTo(expectedY, 4);
+        }
     });
 
     it("creates frames for a timeline with many keyframes at various frame rates", () => {
@@ -1056,26 +1063,26 @@ describe("getAnimationFrames", () => {
                         (totalDuration / 1000) * frameRate,
                     );
 
-                    expect(frames.length).toBeGreaterThanOrEqual(
+                    const numCoordinates = frames.length / 2;
+                    expect(numCoordinates).toBeGreaterThanOrEqual(
                         expectedFrameCount,
                     );
-                    expect(frames.length).toBeLessThanOrEqual(
+                    expect(numCoordinates).toBeLessThanOrEqual(
                         expectedFrameCount + 1,
                     );
 
-                    frames.forEach((coordinate, index) => {
+                    for (let i = 0; i < numCoordinates; i++) {
                         const startTime = timestamps[0];
-                        const timestamp =
-                            startTime + index * (1000 / frameRate);
+                        const timestamp = startTime + i * (1000 / frameRate);
 
                         // Find which segment this frame belongs to
                         let segmentIndex = timestamps.length - 2; // Default to last segment
-                        for (let i = 0; i < timestamps.length - 1; i++) {
+                        for (let j = 0; j < timestamps.length - 1; j++) {
                             if (
-                                timestamp >= timestamps[i] &&
-                                timestamp < timestamps[i + 1]
+                                timestamp >= timestamps[j] &&
+                                timestamp < timestamps[j + 1]
                             ) {
-                                segmentIndex = i;
+                                segmentIndex = j;
                                 break;
                             }
                         }
@@ -1096,9 +1103,10 @@ describe("getAnimationFrames", () => {
                             startCoord.y +
                             progress * (endCoord.y - startCoord.y);
 
-                        expect(coordinate.x).toBeCloseTo(expectedX, 5);
-                        expect(coordinate.y).toBeCloseTo(expectedY, 5);
-                    });
+                        // Float32Array has slightly less precision, so we use 4 decimal places
+                        expect(frames[i * 2]).toBeCloseTo(expectedX, 4);
+                        expect(frames[i * 2 + 1]).toBeCloseTo(expectedY, 4);
+                    }
                 },
             ),
         );
@@ -1143,22 +1151,23 @@ describe("getAnimationFrames", () => {
         marchers.forEach((marcherTimeline, marcherIndex) => {
             const frames = getAnimationFrames({ marcherTimeline, frameRate });
 
-            expect(frames.length).toBeGreaterThanOrEqual(frameRate);
-            expect(frames.length).toBeLessThanOrEqual(frameRate + 1);
+            const numCoordinates = frames.length / 2;
+            expect(numCoordinates).toBeGreaterThanOrEqual(frameRate);
+            expect(numCoordinates).toBeLessThanOrEqual(frameRate + 1);
 
-            frames.forEach((coordinate, index) => {
+            for (let i = 0; i < numCoordinates; i++) {
                 const timestamps = marcherTimeline.sortedTimestamps;
                 const startTime = timestamps[0];
-                const timestamp = startTime + index * (1000 / frameRate);
+                const timestamp = startTime + i * (1000 / frameRate);
 
                 // Find which segment this frame belongs to
                 let segmentIndex = timestamps.length - 2; // Default to last segment
-                for (let i = 0; i < timestamps.length - 1; i++) {
+                for (let j = 0; j < timestamps.length - 1; j++) {
                     if (
-                        timestamp >= timestamps[i] &&
-                        timestamp < timestamps[i + 1]
+                        timestamp >= timestamps[j] &&
+                        timestamp < timestamps[j + 1]
                     ) {
-                        segmentIndex = i;
+                        segmentIndex = j;
                         break;
                     }
                 }
@@ -1177,9 +1186,10 @@ describe("getAnimationFrames", () => {
                 const expectedY =
                     startCoord.y + progress * (endCoord.y - startCoord.y);
 
-                expect(coordinate.x).toBeCloseTo(expectedX, 5);
-                expect(coordinate.y).toBeCloseTo(expectedY, 5);
-            });
+                // Float32Array has slightly less precision, so we use 4 decimal places
+                expect(frames[i * 2]).toBeCloseTo(expectedX, 4);
+                expect(frames[i * 2 + 1]).toBeCloseTo(expectedY, 4);
+            }
         });
     });
 
@@ -1229,27 +1239,28 @@ describe("getAnimationFrames", () => {
                             (totalDuration / 1000) * frameRate,
                         );
 
-                        expect(frames.length).toBeGreaterThanOrEqual(
+                        const numCoordinates = frames.length / 2;
+                        expect(numCoordinates).toBeGreaterThanOrEqual(
                             expectedFrameCount,
                         );
-                        expect(frames.length).toBeLessThanOrEqual(
+                        expect(numCoordinates).toBeLessThanOrEqual(
                             expectedFrameCount + 1,
                         );
 
-                        frames.forEach((coordinate, index) => {
+                        for (let i = 0; i < numCoordinates; i++) {
                             const timestamps = marcherTimeline.sortedTimestamps;
                             const startTime = timestamps[0];
                             const timestamp =
-                                startTime + index * (1000 / frameRate);
+                                startTime + i * (1000 / frameRate);
 
                             // Find which segment this frame belongs to
                             let segmentIndex = timestamps.length - 2; // Default to last segment
-                            for (let i = 0; i < timestamps.length - 1; i++) {
+                            for (let j = 0; j < timestamps.length - 1; j++) {
                                 if (
-                                    timestamp >= timestamps[i] &&
-                                    timestamp < timestamps[i + 1]
+                                    timestamp >= timestamps[j] &&
+                                    timestamp < timestamps[j + 1]
                                 ) {
-                                    segmentIndex = i;
+                                    segmentIndex = j;
                                     break;
                                 }
                             }
@@ -1272,9 +1283,10 @@ describe("getAnimationFrames", () => {
                                 startCoord.y +
                                 progress * (endCoord.y - startCoord.y);
 
-                            expect(coordinate.x).toBeCloseTo(expectedX, 5);
-                            expect(coordinate.y).toBeCloseTo(expectedY, 5);
-                        });
+                            // Float32Array has slightly less precision, so we use 4 decimal places
+                            expect(frames[i * 2]).toBeCloseTo(expectedX, 4);
+                            expect(frames[i * 2 + 1]).toBeCloseTo(expectedY, 4);
+                        }
                     });
                 },
             ),

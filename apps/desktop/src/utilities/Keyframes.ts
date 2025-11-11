@@ -112,7 +112,7 @@ export const getCoordinatesAtTime = (
  * @param startTimestamp The starting timestamp in milliseconds.
  * @param marcherTimeline The timeline of coordinates for the marcher.
  * @param frameRate The number of frames per second.
- * @returns An array of coordinates from the start timestamp to the end of the timeline.
+ * @returns A Float32Array storing coordinates in a flat structure [x1, y1, x2, y2, ...] from the start timestamp to the end of the timeline.
  */
 export const getAnimationFrames = ({
     // startTimestamp,
@@ -122,13 +122,13 @@ export const getAnimationFrames = ({
     // startTimestamp: number;
     marcherTimeline: MarcherTimeline;
     frameRate: number;
-}): Coordinate[] => {
+}): Float32Array => {
     // if (startTimestamp < 0)
     // throw new Error(`Cannot use negative timestamp: ${startTimestamp}`);
     if (frameRate <= 0)
         throw new Error(`Frame rate must be positive: ${frameRate}`);
 
-    const coordinates: Coordinate[] = [];
+    const coordinates: number[] = [];
     const intervalMilliseconds = 1000 / frameRate;
 
     const startTimestamp = marcherTimeline.sortedTimestamps[0];
@@ -138,7 +138,7 @@ export const getAnimationFrames = ({
         ];
 
     // if (endTimestamp === undefined || startTimestamp > endTimestamp) {
-    //     return coordinates;
+    //     return new Float32Array(0);
     // }
 
     // Generate coordinates at each frame interval
@@ -149,11 +149,11 @@ export const getAnimationFrames = ({
     ) {
         const coordinate = getCoordinatesAtTime(timestamp, marcherTimeline);
         if (coordinate !== null) {
-            coordinates.push(coordinate);
+            coordinates.push(coordinate.x, coordinate.y);
         }
     }
 
-    return coordinates;
+    return new Float32Array(coordinates);
 };
 
 /**
