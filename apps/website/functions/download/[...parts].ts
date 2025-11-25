@@ -18,6 +18,17 @@ export async function onRequestGet(ctx) {
         headers["ETag"] = file.httpEtag;
     }
 
+    const versionPattern = /v\d+\.\d+\.\d+/;
+    const version = filePath.match(versionPattern)?.[0];
+    const extension = filePath.split(".").pop();
+
+    // Write download analytics
+    await ctx.env.DOWNLOAD_ANALYTICS.writeDataPoint({
+        blobs: ["total", filePath, version, extension],
+        doubles: [1],
+        indexes: ["download"],
+    });
+
     // Suggest filename for download
     const filename = filePath.split("/").pop();
     if (filename) {
