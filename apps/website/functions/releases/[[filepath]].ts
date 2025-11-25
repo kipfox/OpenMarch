@@ -5,14 +5,9 @@ export async function onRequestGet(ctx) {
             "",
         );
 
-        if (!ctx.env.DOWNLOADS_BUCKET) {
-            return new Response("DOWNLOADS_BUCKET not configured", {
-                status: 500,
-            });
-        }
-
         const file = await ctx.env.DOWNLOADS_BUCKET.get(filePath);
-        if (!file) return new Response(null, { status: 404 });
+        if (file == null)
+            return new Response("Release file not found", { status: 404 });
 
         const headers = {
             "Content-Type":
