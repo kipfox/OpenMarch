@@ -1,11 +1,11 @@
-import {
-    Point,
-    SegmentJsonData,
-    IControllableSegment,
-    ControlPointType,
-    ControlPoint,
-} from "../interfaces";
 import PathCommander from "svg-path-commander";
+import type {
+    IControllableSegment,
+    SegmentJsonData,
+    ControlPoint,
+    ControlPointType,
+    Point,
+} from "../interfaces";
 
 /**
  * Represents an SVG elliptical arc segment defined by start point, radii, flags, and end point.
@@ -242,7 +242,6 @@ export class Arc implements IControllableSegment {
                 const constrainedPoint = { x: midPoint.x, y: newPoint.y };
                 const rx = getDistance(this.startPoint, this.endPoint) / 2;
                 const ry = getDistance(constrainedPoint, midPoint);
-                console.log("ry", ry);
 
                 return new Arc(
                     this.startPoint,

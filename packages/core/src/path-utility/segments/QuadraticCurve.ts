@@ -1,10 +1,10 @@
 import PathCommander from "svg-path-commander";
 import {
-    ControlPoint,
-    ControlPointType,
-    IControllableSegment,
-    Point,
-    SegmentJsonData,
+    type ControlPoint,
+    type ControlPointType,
+    type IControllableSegment,
+    type Point,
+    type SegmentJsonData,
 } from "../interfaces";
 
 export class QuadraticCurve implements IControllableSegment {
